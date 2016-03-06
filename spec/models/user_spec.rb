@@ -1,4 +1,4 @@
-require 'spec_helper'
+require 'rails_helper'
 require_dependency 'user'
 
 describe User do
@@ -152,33 +152,15 @@ describe User do
     it "is properly initialized" do
       expect(subject.approved_at).to be_blank
       expect(subject.approved_by_id).to be_blank
-      expect(subject.email_private_messages).to eq(true)
-      expect(subject.email_direct).to eq(true)
-    end
-
-    context 'digest emails' do
-      it 'defaults to digests every week' do
-        expect(subject.email_digests).to eq(true)
-        expect(subject.digest_after_days).to eq(7)
-      end
-
-      it 'uses default_digest_email_frequency' do
-        SiteSetting.stubs(:default_digest_email_frequency).returns(1)
-        expect(subject.email_digests).to eq(true)
-        expect(subject.digest_after_days).to eq(1)
-      end
-
-      it 'disables digests by default if site setting says so' do
-        SiteSetting.stubs(:default_digest_email_frequency).returns('')
-        expect(subject.email_digests).to eq(false)
-      end
     end
 
     context 'after_save' do
       before { subject.save }
 
-      it "has an email token" do
+      it "has correct settings" do
         expect(subject.email_tokens).to be_present
+        expect(subject.user_option.email_private_messages).to eq(true)
+        expect(subject.user_option.email_direct).to eq(true)
       end
     end
 
@@ -356,29 +338,57 @@ describe User do
   end
 
   describe 'username format' do
-    it "should be #{SiteSetting.min_username_length} chars or longer" do
-      @user = Fabricate.build(:user)
-      @user.username = 'ss'
-      expect(@user.save).to eq(false)
+    def assert_bad(username)
+      user = Fabricate.build(:user)
+      user.username = username
+      expect(user.valid?).to eq(false)
     end
 
-    it "should never end with a ." do
-      @user = Fabricate.build(:user)
-      @user.username = 'sam.'
-      expect(@user.save).to eq(false)
+    def assert_good(username)
+      user = Fabricate.build(:user)
+      user.username = username
+      expect(user.valid?).to eq(true)
     end
 
-    it "should never contain spaces" do
-      @user = Fabricate.build(:user)
-      @user.username = 'sam s'
-      expect(@user.save).to eq(false)
+    it "should be SiteSetting.min_username_length chars or longer" do
+      SiteSetting.min_username_length = 5
+      assert_bad("abcd")
+      assert_good("abcde")
     end
 
-    ['Bad One', 'Giraf%fe', 'Hello!', '@twitter', 'me@example.com', 'no.dots', 'purple.', '.bilbo', '_nope', 'sa$sy'].each do |bad_nickname|
-      it "should not allow username '#{bad_nickname}'" do
-        @user = Fabricate.build(:user)
-        @user.username = bad_nickname
-        expect(@user.save).to eq(false)
+    %w{ first.last
+        first first-last
+        _name first_last
+        mc.hammer_nose
+        UPPERCASE
+        sgif
+    }.each do |username|
+      it "allows #{username}" do
+        assert_good(username)
+      end
+    end
+
+    %w{
+      traildot.
+      has\ space
+      double__underscore
+      with%symbol
+      Exclamation!
+      @twitter
+      my@email.com
+      .tester
+      sa$sy
+      sam.json
+      sam.xml
+      sam.html
+      sam.htm
+      sam.js
+      sam.woff
+      sam.Png
+      sam.gif
+    }.each do |username|
+      it "disallows #{username}" do
+        assert_bad(username)
       end
     end
   end
@@ -695,7 +705,19 @@ describe User do
 
       # It doesn't raise an exception if called again
       user.flag_linked_posts_as_spam
+    end
 
+    it "does not flags post as spam if the previous flag for that post was disagreed" do
+      user.flag_linked_posts_as_spam
+
+      post.reload
+      expect(post.spam_count).to eq(1)
+
+      PostAction.clear_flags!(post, admin)
+      user.flag_linked_posts_as_spam
+
+      post.reload
+      expect(post.spam_count).to eq(0)
     end
 
   end
@@ -886,7 +908,11 @@ describe User do
     let(:user) { build(:user, username: 'Sam') }
 
     it "returns a 45-pixel-wide avatar" do
+      SiteSetting.external_system_avatars_enabled = false
       expect(user.small_avatar_url).to eq("//test.localhost/letter_avatar/sam/45/#{LetterAvatar.version}.png")
+
+      SiteSetting.external_system_avatars_enabled = true
+      expect(user.small_avatar_url).to eq("//test.localhost/letter_avatar_proxy/v2/letter/s/5f9b8f/45.png")
     end
 
   end
@@ -960,106 +986,11 @@ describe User do
     end
   end
 
-  context "group management" do
-    let!(:user) { Fabricate(:user) }
-
-    it "by default has no managed groups" do
-      expect(user.managed_groups).to be_empty
-    end
-
-    it "can manage multiple groups" do
-      3.times do |i|
-        g = Fabricate(:group, name: "group_#{i}")
-        g.appoint_manager(user)
-      end
-      expect(user.managed_groups.count).to eq(3)
-    end
-  end
-
-  describe "should_be_redirected_to_top" do
-    let!(:user) { Fabricate(:user) }
-
-    it "should be redirected to top when there is a reason to" do
-      user.expects(:redirected_to_top_reason).returns("42")
-      expect(user.should_be_redirected_to_top).to eq(true)
-    end
-
-    it "should not be redirected to top when there is no reason to" do
-      user.expects(:redirected_to_top_reason).returns(nil)
-      expect(user.should_be_redirected_to_top).to eq(false)
-    end
-
-  end
-
-  describe ".redirected_to_top_reason" do
-    let!(:user) { Fabricate(:user) }
-
-    it "should have no reason when `SiteSetting.redirect_users_to_top_page` is disabled" do
-      SiteSetting.expects(:redirect_users_to_top_page).returns(false)
-      expect(user.redirected_to_top_reason).to eq(nil)
-    end
-
-    context "when `SiteSetting.redirect_users_to_top_page` is enabled" do
-      before { SiteSetting.expects(:redirect_users_to_top_page).returns(true) }
-
-      it "should have no reason when top is not in the `SiteSetting.top_menu`" do
-        SiteSetting.expects(:top_menu).returns("latest")
-        expect(user.redirected_to_top_reason).to eq(nil)
-      end
-
-      context "and when top is in the `SiteSetting.top_menu`" do
-        before { SiteSetting.expects(:top_menu).returns("latest|top") }
-
-        it "should have no reason when there aren't enough topics" do
-          SiteSetting.expects(:has_enough_topics_to_redirect_to_top).returns(false)
-          expect(user.redirected_to_top_reason).to eq(nil)
-        end
-
-        context "and when there are enough topics" do
-          before { SiteSetting.expects(:has_enough_topics_to_redirect_to_top).returns(true) }
-
-          describe "a new user" do
-            before do
-              user.stubs(:trust_level).returns(0)
-              user.stubs(:last_seen_at).returns(5.minutes.ago)
-            end
-
-            it "should have a reason for the first visit" do
-              user.expects(:last_redirected_to_top_at).returns(nil)
-              user.expects(:update_last_redirected_to_top!).once
-
-              expect(user.redirected_to_top_reason).to eq(I18n.t('redirected_to_top_reasons.new_user'))
-            end
-
-            it "should not have a reason for next visits" do
-              user.expects(:last_redirected_to_top_at).returns(10.minutes.ago)
-              user.expects(:update_last_redirected_to_top!).never
-
-              expect(user.redirected_to_top_reason).to eq(nil)
-            end
-          end
-
-          describe "an older user" do
-            before { user.stubs(:trust_level).returns(1) }
-
-            it "should have a reason when the user hasn't been seen in a month" do
-              user.last_seen_at = 2.months.ago
-              user.expects(:update_last_redirected_to_top!).once
-
-              expect(user.redirected_to_top_reason).to eq(I18n.t('redirected_to_top_reasons.not_seen_in_a_month'))
-            end
-          end
-
-        end
-
-      end
-
-    end
-
-  end
 
   describe "automatic avatar creation" do
     it "sets a system avatar for new users" do
+      SiteSetting.external_system_avatars_enabled = false
+
       u = User.create!(username: "bob", email: "bob@bob.com")
       u.reload
       expect(u.uploaded_avatar_id).to eq(nil)
@@ -1221,6 +1152,67 @@ describe User do
 
       expect(user.new_user?).to eq(false)
     end
+  end
+
+  context "when user preferences are overriden" do
+
+    before do
+      SiteSetting.default_email_digest_frequency = 1440 # daily
+      SiteSetting.default_email_private_messages = false
+      SiteSetting.default_email_direct = false
+      SiteSetting.default_email_mailing_list_mode = true
+      SiteSetting.default_email_always = true
+
+      SiteSetting.default_other_new_topic_duration_minutes = -1 # not viewed
+      SiteSetting.default_other_auto_track_topics_after_msecs = 0 # immediately
+      SiteSetting.default_other_external_links_in_new_tab = true
+      SiteSetting.default_other_enable_quoting = false
+      SiteSetting.default_other_dynamic_favicon = true
+      SiteSetting.default_other_disable_jump_reply = true
+      SiteSetting.default_other_edit_history_public = true
+
+      SiteSetting.default_topics_automatic_unpin = false
+
+      SiteSetting.default_categories_watching = "1"
+      SiteSetting.default_categories_tracking = "2"
+      SiteSetting.default_categories_muted = "3"
+    end
+
+    it "has overriden preferences" do
+      user = Fabricate(:user)
+      options = user.user_option
+      expect(options.email_always).to eq(true)
+      expect(options.mailing_list_mode).to eq(true)
+      expect(options.digest_after_minutes).to eq(1440)
+      expect(options.email_private_messages).to eq(false)
+      expect(options.external_links_in_new_tab).to eq(true)
+      expect(options.enable_quoting).to eq(false)
+      expect(options.dynamic_favicon).to eq(true)
+      expect(options.disable_jump_reply).to eq(true)
+      expect(options.edit_history_public).to eq(true)
+      expect(options.automatically_unpin_topics).to eq(false)
+      expect(options.email_direct).to eq(false)
+      expect(options.new_topic_duration_minutes).to eq(-1)
+      expect(options.auto_track_topics_after_msecs).to eq(0)
+
+      expect(CategoryUser.lookup(user, :watching).pluck(:category_id)).to eq([1])
+      expect(CategoryUser.lookup(user, :tracking).pluck(:category_id)).to eq([2])
+      expect(CategoryUser.lookup(user, :muted).pluck(:category_id)).to eq([3])
+    end
+  end
+
+  context UserOption do
+
+    it "Creates a UserOption row when a user record is created and destroys once done" do
+      user = Fabricate(:user)
+      expect(user.user_option.email_always).to eq(false)
+
+      user_id = user.id
+      user.destroy!
+      expect(UserOption.find_by(user_id: user_id)).to eq(nil)
+
+    end
+
   end
 
 end

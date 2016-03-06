@@ -4,7 +4,7 @@ export default Ember.CollectionView.extend({
 
   hidden: Em.computed.not('controller.controllers.composer.model.viewOpen'),
 
-  itemViewClass: Discourse.View.extend({
+  itemViewClass: Ember.View.extend({
     classNames: ['composer-popup', 'hidden'],
     templateName: Em.computed.alias('content.templateName'),
 
@@ -18,8 +18,7 @@ export default Ember.CollectionView.extend({
     }.on('init'),
 
     _initCss: function() {
-      var composerHeight = $('#reply-control').height() || 0;
-      this.$().css('bottom', composerHeight + "px").show();
+      this.$().show();
     }.on('didInsertElement')
   })
 });

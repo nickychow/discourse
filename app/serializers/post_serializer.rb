@@ -5,6 +5,7 @@ class PostSerializer < BasicPostSerializer
     :topic_view,
     :parent_post,
     :add_raw,
+    :add_title,
     :single_post_link_counts,
     :draft_sequence,
     :post_actions,
@@ -28,12 +29,16 @@ class PostSerializer < BasicPostSerializer
              :yours,
              :topic_id,
              :topic_slug,
+             :topic_title,
+             :topic_html_title,
+             :category_id,
              :display_username,
              :primary_group_name,
              :version,
              :can_edit,
              :can_delete,
              :can_recover,
+             :can_wiki,
              :link_counts,
              :read,
              :user_title,
@@ -58,7 +63,8 @@ class PostSerializer < BasicPostSerializer
              :user_custom_fields,
              :static_doc,
              :via_email,
-             :action_code
+             :action_code,
+             :action_code_who
 
   def initialize(object, opts)
     super(object, opts)
@@ -70,7 +76,31 @@ class PostSerializer < BasicPostSerializer
   end
 
   def topic_slug
-    object.try(:topic).try(:slug)
+    object.topic && object.topic.slug
+  end
+
+  def include_topic_title?
+    @add_title
+  end
+
+  def include_topic_html_title?
+    @add_title
+  end
+
+  def include_category_id?
+    @add_title
+  end
+
+  def topic_title
+    object.topic.title
+  end
+
+  def topic_html_title
+    object.topic.fancy_title
+  end
+
+  def category_id
+    object.topic.category_id
   end
 
   def moderator?
@@ -99,6 +129,10 @@ class PostSerializer < BasicPostSerializer
 
   def can_recover
     scope.can_recover_post?(object)
+  end
+
+  def can_wiki
+    scope.can_wiki?(object)
   end
 
   def display_username
@@ -149,8 +183,7 @@ class PostSerializer < BasicPostSerializer
   def reply_to_user
     {
       username: object.reply_to_user.username,
-      avatar_template: object.reply_to_user.avatar_template,
-      uploaded_avatar_id: object.reply_to_user.uploaded_avatar_id
+      avatar_template: object.reply_to_user.avatar_template
     }
   end
 
@@ -284,6 +317,14 @@ class PostSerializer < BasicPostSerializer
 
   def include_action_code?
     object.action_code.present?
+  end
+
+  def action_code_who
+    post_custom_fields["action_code_who"]
+  end
+
+  def include_action_code_who?
+    include_action_code? && action_code_who.present?
   end
 
   private

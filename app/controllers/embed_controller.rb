@@ -1,11 +1,14 @@
 class EmbedController < ApplicationController
   skip_before_filter :check_xhr, :preload_json, :verify_authenticity_token
-  before_filter :ensure_embeddable
+
+  before_filter :ensure_embeddable, except: [ :info ]
+  before_filter :ensure_api_request, only: [ :info ]
 
   layout 'embed'
 
   def comments
     embed_url = params[:embed_url]
+    embed_username = params[:discourse_username]
 
     topic_id = nil
     if embed_url.present?
@@ -27,12 +30,26 @@ class EmbedController < ApplicationController
         @posts_left = @topic_view.topic.posts_count - SiteSetting.embed_post_limit - 1
       end
 
+      if @topic_view
+        @reply_count = @topic_view.topic.posts_count - 1
+        @reply_count = 0 if @reply_count < 0
+      end
+
     elsif embed_url.present?
-      Jobs.enqueue(:retrieve_topic, user_id: current_user.try(:id), embed_url: embed_url)
+      Jobs.enqueue(:retrieve_topic, user_id: current_user.try(:id), embed_url: embed_url, author_username: embed_username)
       render 'loading'
     end
 
     discourse_expires_in 1.minute
+  end
+
+  def info
+    embed_url = params.require(:embed_url)
+    @topic_embed = TopicEmbed.where(embed_url: embed_url).first
+
+    raise Discourse::NotFound if @topic_embed.nil?
+
+    render_serialized(@topic_embed, TopicEmbedSerializer, root: false)
   end
 
   def count
@@ -55,11 +72,14 @@ class EmbedController < ApplicationController
 
   private
 
+    def ensure_api_request
+      raise Discourse::InvalidAccess.new('api key not set') if !is_api?
+    end
+
     def ensure_embeddable
 
       if !(Rails.env.development? && current_user.try(:admin?))
-        raise Discourse::InvalidAccess.new('embeddable hosts not set') if SiteSetting.embeddable_hosts.blank?
-        raise Discourse::InvalidAccess.new('invalid referer host') unless SiteSetting.allows_embeddable_host?(request.referer)
+        raise Discourse::InvalidAccess.new('invalid referer host') unless EmbeddableHost.host_allowed?(request.referer)
       end
 
       response.headers['X-Frame-Options'] = "ALLOWALL"

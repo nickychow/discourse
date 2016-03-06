@@ -1,3 +1,18 @@
+
+var discourseEscape = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#x27;",
+  '`': '&#x60;'
+};
+var discourseBadChars = /[&<>"'`]/g;
+var discoursePossible = /[&<>"'`]/;
+
+function discourseEscapeChar(chr) {
+  return discourseEscape[chr];
+}
 Discourse.Utilities = {
 
   translateSize: function(size) {
@@ -22,6 +37,28 @@ Discourse.Utilities = {
         delete hash[prop];
       }
     }
+  },
+
+  // Handlebars no longer allows spaces in its `escapeExpression` code which makes it
+  // unsuitable for many of Discourse's uses. Use `Handlebars.Utils.escapeExpression`
+  // when escaping an attribute in HTML, otherwise this one will do.
+  escapeExpression: function(string) {
+    // don't escape SafeStrings, since they're already safe
+    if (string instanceof Handlebars.SafeString) {
+      return string.toString();
+    } else if (string == null) {
+      return "";
+    } else if (!string) {
+      return string + '';
+    }
+
+    // Force a string conversion as this will be done by the append regardless and
+    // the regex test will do this transparently behind the scenes, causing issues if
+    // an object's to string has escaped characters in it.
+    string = "" + string;
+
+    if(!discoursePossible.test(string)) { return string; }
+    return string.replace(discourseBadChars, discourseEscapeChar);
   },
 
   avatarUrl: function(template, size) {
@@ -97,10 +134,26 @@ Discourse.Utilities = {
     // Strip out any .click elements from the HTML before converting it to text
     var div = document.createElement('div');
     div.innerHTML = html;
-    $('.clicks', $(div)).remove();
+    var $div = $(div);
+    // Find all emojis and replace with its title attribute.
+    $div.find('img.emoji').replaceWith(function() { return this.title; });
+    $('.clicks', $div).remove();
     var text = div.textContent || div.innerText || "";
 
     return String(text).trim();
+  },
+
+  // Determine the row and col of the caret in an element
+  caretRowCol: function(el) {
+    var caretPosition = Discourse.Utilities.caretPosition(el);
+    var rows = el.value.slice(0, caretPosition).split("\n");
+    var rowNum = rows.length;
+
+    var colNum = caretPosition - rows.splice(0, rowNum - 1).reduce(function(sum, row) {
+      return sum + row.length + 1;
+    }, 0);
+
+    return { rowNum: rowNum, colNum: colNum};
   },
 
   // Determine the position of the caret in an element
@@ -177,14 +230,6 @@ Discourse.Utilities = {
       }
     }
 
-    // check file size
-    var fileSizeKB = file.size / 1024;
-    var maxSizeKB = Discourse.SiteSettings['max_' + type + '_size_kb'];
-    if (fileSizeKB > maxSizeKB) {
-      bootbox.alert(I18n.t('post.errors.file_too_large', { max_size_kb: maxSizeKB }));
-      return false;
-    }
-
     // everything went fine
     return true;
   },
@@ -215,23 +260,30 @@ Discourse.Utilities = {
   getUploadMarkdown: function(upload) {
     if (Discourse.Utilities.isAnImage(upload.original_filename)) {
       return '<img src="' + upload.url + '" width="' + upload.width + '" height="' + upload.height + '">';
+    } else if (!Discourse.SiteSettings.prevent_anons_from_downloading_files && (/\.(mov|mp4|webm|ogv|mp3|ogg|wav)$/i).test(upload.original_filename)) {
+      // is Audio/Video
+      if (Discourse.CDN) {
+        return Discourse.CDN.startsWith('//') ? "http:" + Discourse.getURLWithCDN(upload.url) : Discourse.getURLWithCDN(upload.url);
+      } else {
+        return "http://" + Discourse.BaseUrl + upload.url;
+      }
     } else {
       return '<a class="attachment" href="' + upload.url + '">' + upload.original_filename + '</a> (' + I18n.toHumanSize(upload.filesize) + ')';
     }
   },
 
   isAnImage: function(path) {
-    return (/\.(png|jpe?g|gif|bmp|tiff?|svg|webp)$/i).test(path);
+    return (/\.(png|jpe?g|gif|bmp|tiff?|svg|webp|ico)$/i).test(path);
   },
 
   allowsImages: function() {
     return Discourse.Utilities.authorizesAllExtensions() ||
-           (/(png|jpe?g|gif|bmp|tiff?|svg|webp)/i).test(Discourse.Utilities.authorizedExtensions());
+           (/(png|jpe?g|gif|bmp|tiff?|svg|webp|ico)/i).test(Discourse.Utilities.authorizedExtensions());
   },
 
   allowsAttachments: function() {
     return Discourse.Utilities.authorizesAllExtensions() ||
-           !(/((png|jpe?g|gif|bmp|tiff?|svg|webp)(,\s)?)+$/i).test(Discourse.Utilities.authorizedExtensions());
+           !(/((png|jpe?g|gif|bmp|tiff?|svg|web|ico)(,\s)?)+$/i).test(Discourse.Utilities.authorizedExtensions());
   },
 
   displayErrorForUpload: function(data) {
@@ -243,7 +295,7 @@ Discourse.Utilities = {
 
         // entity too large, usually returned from the web server
         case 413:
-          var maxSizeKB = Discourse.SiteSettings.max_image_size_kb;
+          var maxSizeKB = 10 * 1024; // 10 MB
           bootbox.alert(I18n.t('post.errors.file_too_large', { max_size_kb: maxSizeKB }));
           return;
 

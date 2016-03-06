@@ -1,10 +1,17 @@
+import DiscourseURL from 'discourse/lib/url';
+
+export function isValidLink($link) {
+  return ($link.hasClass("track-link") ||
+          $link.closest('.hashtag,.badge-category,.onebox-result,.onebox-body').length === 0);
+};
+
 export default {
   trackClick(e) {
     // cancel click if triggered as part of selection.
     if (Discourse.Utilities.selectedText() !== "") { return false; }
 
     var $link = $(e.currentTarget);
-    if ($link.hasClass('lightbox')) { return true; }
+    if ($link.hasClass('lightbox') || $link.hasClass('mention-group')) { return true; }
 
     var href = $link.attr('href') || $link.data('href'),
         $article = $link.closest('article'),
@@ -30,8 +37,7 @@ export default {
       var $badge = $('span.badge', $link);
       if ($badge.length === 1) {
         // don't update counts in category badge nor in oneboxes (except when we force it)
-        if ($link.hasClass("track-link") ||
-            $link.closest('.badge-category,.onebox-result,.onebox-body').length === 0) {
+        if (isValidLink($link)) {
           var html = $badge.html();
           if (/^\d+$/.test(html)) { $badge.html(parseInt(html, 10) + 1); }
         }
@@ -87,7 +93,7 @@ export default {
     }
 
     // If we're on the same site, use the router and track via AJAX
-    if (Discourse.URL.isInternal(href) && !$link.hasClass('attachment')) {
+    if (DiscourseURL.isInternal(href) && !$link.hasClass('attachment')) {
       Discourse.ajax("/clicks/track", {
         data: {
           url: href,
@@ -97,7 +103,7 @@ export default {
         },
         dataType: 'html'
       });
-      Discourse.URL.routeTo(href);
+      DiscourseURL.routeTo(href);
       return false;
     }
 
@@ -106,7 +112,7 @@ export default {
       var win = window.open(trackingUrl, '_blank');
       win.focus();
     } else {
-      Discourse.URL.redirectTo(trackingUrl);
+      DiscourseURL.redirectTo(trackingUrl);
     }
 
     return false;

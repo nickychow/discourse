@@ -18,11 +18,14 @@ class GlobalSetting
 
   def self.database_config
     hash = {"adapter" => "postgresql"}
-    %w{pool timeout socket host port username password}.each do |s|
+    %w{pool timeout socket host port username password replica_host replica_port}.each do |s|
       if val = self.send("db_#{s}")
         hash[s] = val
       end
     end
+
+    hash["adapter"] = "postgresql_fallback" if hash["replica_host"]
+
     hostnames = [ hostname ]
     hostnames << backup_hostname if backup_hostname.present?
 
@@ -88,7 +91,7 @@ class GlobalSetting
 
     def read
       ERB.new(File.read(@file)).result().split("\n").each do |line|
-        if line =~ /^\s*([a-z_]+)\s*=\s*(\"([^\"]*)\"|\'([^\']*)\'|[^#]*)/
+        if line =~ /^\s*([a-z_]+[a-z0-9_]*)\s*=\s*(\"([^\"]*)\"|\'([^\']*)\'|[^#]*)/
           @data[$1.strip.to_sym] = ($4 || $3 || $2).strip
         end
       end

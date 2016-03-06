@@ -1,11 +1,13 @@
-export default Ember.ObjectController.extend({
+import DiscourseURL from 'discourse/lib/url';
+
+export default Ember.Controller.extend({
   needs: ['topic'],
   progressPosition: null,
   expanded: false,
   toPostIndex: null,
 
   actions: {
-    toggleExpansion: function(opts) {
+    toggleExpansion(opts) {
       this.toggleProperty('expanded');
       if (this.get('expanded')) {
         this.set('toPostIndex', this.get('progressPosition'));
@@ -18,7 +20,7 @@ export default Ember.ObjectController.extend({
       }
     },
 
-    jumpPost: function() {
+    jumpPost() {
       var postIndex = parseInt(this.get('toPostIndex'), 10);
 
       // Validate the post index first
@@ -50,19 +52,19 @@ export default Ember.ObjectController.extend({
       }
     },
 
-    jumpTop: function() {
+    jumpTop() {
       this.jumpTo(this.get('model.firstPostUrl'));
     },
 
-    jumpBottom: function() {
+    jumpBottom() {
       this.jumpTo(this.get('model.lastPostUrl'));
     }
   },
 
   // Route and close the expansion
-  jumpTo: function(url) {
+  jumpTo(url) {
     this.set('expanded', false);
-    Discourse.URL.routeTo(url);
+    DiscourseURL.routeTo(url);
   },
 
   streamPercentage: function() {

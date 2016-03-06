@@ -13,7 +13,7 @@ class TopicLinkClick < ActiveRecord::Base
 
   # Create a click from a URL and post_id
   def self.create_from(args={})
-    url = args[:url]
+    url = args[:url][0...TopicLink.max_url_length]
     return nil if url.blank?
 
     uri = URI.parse(url) rescue nil
@@ -28,6 +28,15 @@ class TopicLinkClick < ActiveRecord::Base
     urls << UrlHelper.absolute_without_cdn(url)
     urls << uri.path if uri.try(:host) == Discourse.current_hostname
     urls << url.sub(/\?.*$/, '') if url.include?('?')
+
+    # add a cdn link
+    if uri && Discourse.asset_host.present?
+      cdn_uri = URI.parse(Discourse.asset_host) rescue nil
+      if cdn_uri && cdn_uri.hostname == uri.hostname && uri.path.starts_with?(cdn_uri.path)
+        is_cdn_link = true
+        urls << uri.path[(cdn_uri.path.length)..-1]
+      end
+    end
 
     link = TopicLink.select([:id, :user_id])
 
@@ -54,7 +63,9 @@ class TopicLinkClick < ActiveRecord::Base
       return nil unless uri
 
       # Only redirect to whitelisted hostnames
-      return WHITELISTED_REDIRECT_HOSTNAMES.include?(uri.hostname) ? url : nil
+      return url if WHITELISTED_REDIRECT_HOSTNAMES.include?(uri.hostname) || is_cdn_link
+
+      return nil
     end
 
     return url if args[:user_id] && link.user_id == args[:user_id]

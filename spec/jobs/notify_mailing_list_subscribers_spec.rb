@@ -1,9 +1,10 @@
-require "spec_helper"
+require "rails_helper"
 
 describe Jobs::NotifyMailingListSubscribers do
 
   context "with mailing list on" do
-    let(:user) { Fabricate(:user, mailing_list_mode: true) }
+    before { SiteSetting.stubs(:default_email_mailing_list_mode).returns(true) }
+    let(:user) { Fabricate(:user) }
 
     context "with a valid post" do
       let!(:post) { Fabricate(:post, user: user) }
@@ -45,20 +46,22 @@ describe Jobs::NotifyMailingListSubscribers do
       end
     end
 
-  end
+    context "to an anonymous user" do
+      let(:user) { Fabricate(:anonymous) }
+      let!(:post) { Fabricate(:post, user: user) }
 
-  context "to an anonymous user with mailing list on" do
-    let(:user) { Fabricate(:anonymous, mailing_list_mode: true) }
-    let!(:post) { Fabricate(:post, user: user) }
-
-    it "doesn't send the email to the user" do
-      UserNotifications.expects(:mailing_list_notify).with(user, post).never
-      Jobs::NotifyMailingListSubscribers.new.execute(post_id: post.id)
+      it "doesn't send the email to the user" do
+        UserNotifications.expects(:mailing_list_notify).with(user, post).never
+        Jobs::NotifyMailingListSubscribers.new.execute(post_id: post.id)
+      end
     end
+
   end
 
   context "with mailing list off" do
-    let(:user) { Fabricate(:user, mailing_list_mode: false) }
+    before { SiteSetting.stubs(:default_email_mailing_list_mode).returns(false) }
+
+    let(:user) { Fabricate(:user) }
     let!(:post) { Fabricate(:post, user: user) }
 
     it "doesn't send the email to the user" do

@@ -1,4 +1,5 @@
-/*global md5:true */
+/*eslint no-bitwise:0 */
+
 /**
 
   Discourse uses the Markdown.js as its main parser. `Discourse.Dialect` is the framework
@@ -13,7 +14,7 @@ var parser = window.BetterMarkdown,
     emitters = [],
     hoisted,
     preProcessors = [],
-    escape = Handlebars.Utils.escapeExpression;
+    escape = Discourse.Utilities.escapeExpression;
 
 /**
   Initialize our dialects for processing.
@@ -44,7 +45,7 @@ function processTextNodes(node, event, emitter) {
   if (node.length < 2) { return; }
 
   if (node[0] === '__RAW') {
-    var hash = md5(node[1]);
+    var hash = Discourse.Dialect.guid();
     hoisted[hash] = node[1];
     node[1] = hash;
     return;
@@ -135,7 +136,7 @@ function invalidBoundary(args, prev) {
   var last = prev[prev.length - 1];
   if (typeof last !== "string") { return false; }
 
-  if (args.wordBoundary && (last.match(/(\w|\/)$/))) { return true; }
+  if (args.wordBoundary && (!last.match(/\W$/))) { return true; }
   if (args.spaceBoundary && (!last.match(/\s$/))) { return true; }
   if (args.spaceOrTagBoundary && (!last.match(/(\s|\>)$/))) { return true; }
 }
@@ -156,7 +157,7 @@ function countLines(str) {
 function hoister(t, target, replacement) {
   var regexp = new RegExp(target.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), "g");
   if (t.match(regexp)) {
-    var hash = md5(target);
+    var hash = Discourse.Dialect.guid();
     t = t.replace(regexp, hash);
     hoisted[hash] = replacement;
   }
@@ -190,7 +191,7 @@ function hoistCodeBlocksAndSpans(text) {
 
   // fenced code blocks (AKA GitHub code blocks)
   text = text.replace(/(^\n*|\n)```([a-z0-9\-]*)\n([\s\S]*?)\n```/g, function(_, before, language, content) {
-    var hash = md5(content);
+    var hash = Discourse.Dialect.guid();
     hoisted[hash] = escape(showBackslashEscapedCharacters(removeEmptyLines(content)));
     return before + "```" + language + "\n" + hash + "\n```";
   });
@@ -206,14 +207,14 @@ function hoistCodeBlocksAndSpans(text) {
       }
     }
     // we can safely hoist the code block
-    var hash = md5(content);
+    var hash = Discourse.Dialect.guid();
     hoisted[hash] = escape(outdent(showBackslashEscapedCharacters(removeEmptyLines(content))));
     return before + "    " + hash + "\n";
   });
 
   // <pre>...</pre> code blocks
   text = text.replace(/(\s|^)<pre>([\s\S]*?)<\/pre>/ig, function(_, before, content) {
-    var hash = md5(content);
+    var hash = Discourse.Dialect.guid();
     hoisted[hash] = escape(showBackslashEscapedCharacters(removeEmptyLines(content)));
     return before + "<pre>" + hash + "</pre>";
   });
@@ -222,7 +223,7 @@ function hoistCodeBlocksAndSpans(text) {
   ["``", "`"].forEach(function(delimiter) {
     var regexp = new RegExp("(^|[^`])" + delimiter + "([^`\\n]+?)" + delimiter + "([^`]|$)", "g");
     text = text.replace(regexp, function(_, before, content, after) {
-      var hash = md5(content);
+      var hash = Discourse.Dialect.guid();
       hoisted[hash] = escape(showBackslashEscapedCharacters(content.trim()));
       return before + delimiter + hash + delimiter + after;
     });
@@ -240,6 +241,20 @@ function hoistCodeBlocksAndSpans(text) {
   @module Discourse
 **/
 Discourse.Dialect = {
+
+  // http://stackoverflow.com/a/8809472/17174
+  guid: function(){
+    var d = new Date().getTime();
+    if(window.performance && typeof window.performance.now === "function"){
+        d += performance.now(); //use high-precision timer if available
+    }
+    var uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = (d + Math.random() * 16) % 16 | 0;
+        d = Math.floor(d/16);
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+    return uuid;
+  },
 
   /**
     Cook text using the dialects.
@@ -501,6 +516,12 @@ Discourse.Dialect = {
       var pos = args.start.lastIndex - match[0].length,
           leading = block.slice(0, pos),
           trailing = match[2] ? match[2].replace(/^\n*/, "") : "";
+
+      if(args.withoutLeading && args.withoutLeading.test(leading)) {
+        //The other leading block should be processed first! eg a code block wrapped around a code block.
+        return;
+      }
+
       // just give up if there's no stop tag in this or any next block
       args.stop.lastIndex = block.length - trailing.length;
       if (!args.stop.exec(block) && lastChance()) { return; }

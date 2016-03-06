@@ -136,6 +136,9 @@ class PostRevisor
     publish_changes
     grant_badge
 
+    TopicLink.extract_from(@post)
+    QuotedPost.extract_from(@post)
+
     successfully_saved_post_and_topic
   end
 
@@ -171,7 +174,7 @@ class PostRevisor
   end
 
   def ninja_edit?
-    @revised_at - @last_version_at <= SiteSetting.ninja_edit_window.to_i
+    @revised_at - @last_version_at <= SiteSetting.editing_grace_period.to_i
   end
 
   def owner_changed?
@@ -226,10 +229,10 @@ class PostRevisor
     end
 
     @post.last_editor_id = @editor.id
-    @post.word_count     = @fields[:raw].scan(/\w+/).size if @fields.has_key?(:raw)
+    @post.word_count     = @fields[:raw].scan(/[[:word:]]+/).size if @fields.has_key?(:raw)
     @post.self_edits    += 1 if self_edit?
 
-    clear_flags_and_unhide_post
+    remove_flags_and_unhide_post
 
     @post.extract_quoted_post_numbers
 
@@ -266,9 +269,11 @@ class PostRevisor
     @editor == @post.user
   end
 
-  def clear_flags_and_unhide_post
+  def remove_flags_and_unhide_post
     return unless editing_a_flagged_and_hidden_post?
-    PostAction.clear_flags!(@post, Discourse.system_user)
+    @post.post_actions.where(post_action_type_id: PostActionType.flag_types.values).each do |action|
+      action.remove_act!(Discourse.system_user)
+    end
     @post.unhide!
   end
 
@@ -390,11 +395,15 @@ class PostRevisor
 
     body = @post.cooked
     matches = body.scan(/\<p\>(.*)\<\/p\>/)
-    if matches && matches[0] && matches[0][0]
-      new_description = matches[0][0]
-      new_description = nil if new_description == I18n.t("category.replace_paragraph")
+
+    matches.each do |match|
+      next if match[0] =~ /\<img(.*)src=/ || match[0].blank?
+      new_description = match[0]
+      # first 50 characters should be fine to test they haven't changed the default description
+      new_description = nil if new_description.starts_with?(I18n.t("category.replace_paragraph")[0..50])
       category.update_column(:description, new_description)
       @category_changed = category
+      break
     end
   end
 

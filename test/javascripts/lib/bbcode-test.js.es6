@@ -1,3 +1,6 @@
+import Quote from 'discourse/lib/quote';
+import Post from 'discourse/models/post';
+
 module("Discourse.BBCode");
 
 var format = function(input, expected, text) {
@@ -46,12 +49,6 @@ test('code', function() {
          "it doesn't trim leading whitespace");
 });
 
-test('spoiler', function() {
-  format("[spoiler]it's a sled[/spoiler]", "<span class=\"spoiler\">it's a sled</span>", "supports spoiler tags on text");
-  format("[spoiler]<img src='http://eviltrout.com/eviltrout.png' width='50' height='50'>[/spoiler]",
-         "<div class=\"spoiler\"><img src=\"http://eviltrout.com/eviltrout.png\" width=\"50\" height=\"50\"></div>", "supports spoiler tags on images");
-});
-
 test('lists', function() {
   format("[ul][li]option one[/li][/ul]", "<ul><li>option one</li></ul>", "creates an ul");
   format("[ol][li]option one[/li][/ol]", "<ol><li>option one</li></ol>", "creates an ol");
@@ -82,7 +79,7 @@ test("size tags", function() {
 
 test("quotes", function() {
 
-  var post = Discourse.Post.create({
+  var post = Post.create({
     cooked: "<p><b>lorem</b> ipsum</p>",
     username: "eviltrout",
     post_number: 1,
@@ -90,7 +87,7 @@ test("quotes", function() {
   });
 
   var formatQuote = function(val, expected, text) {
-    equal(Discourse.Quote.build(post, val), expected, text);
+    equal(Quote.build(post, val), expected, text);
   };
 
   formatQuote(undefined, "", "empty string for undefined content");
@@ -155,6 +152,13 @@ test("quote formatting", function() {
          "<aside class=\"quote\" data-post=\"1\" data-topic=\"1\"><div class=\"title\"><div class=\"quote-controls\"></div>Alice:" +
          "</div><blockquote><p>[quote=\"Bob, post:2, topic:1\"]</p></blockquote></aside>",
          "handles mismatched nested quote tags");
+
+  formatQ("[quote=\"Alice, post:1, topic:1\"]\n```javascript\nvar foo ='foo';\nvar bar = 'bar';\n```\n[/quote]",
+          "<aside class=\"quote\" data-post=\"1\" data-topic=\"1\"><div class=\"title\"><div class=\"quote-controls\"></div>Alice:</div><blockquote><p><pre><code class=\"lang-javascript\">var foo =&#x27;foo&#x27;;\nvar bar = &#x27;bar&#x27;;</code></pre></p></blockquote></aside>",
+          "quotes can have code blocks without leading newline");
+  formatQ("[quote=\"Alice, post:1, topic:1\"]\n\n```javascript\nvar foo ='foo';\nvar bar = 'bar';\n```\n[/quote]",
+          "<aside class=\"quote\" data-post=\"1\" data-topic=\"1\"><div class=\"title\"><div class=\"quote-controls\"></div>Alice:</div><blockquote><p><pre><code class=\"lang-javascript\">var foo =&#x27;foo&#x27;;\nvar bar = &#x27;bar&#x27;;</code></pre></p></blockquote></aside>",
+          "quotes can have code blocks with leading newline");
 });
 
 test("quotes with trailing formatting", function() {
@@ -164,5 +168,3 @@ test("quotes with trailing formatting", function() {
         "<div class=\"quote-controls\"></div>EvilTrout:</div><blockquote><p>hello</p></blockquote></aside>\n\n<p><em>Test</em></p>",
         "it allows trailing formatting");
 });
-
-

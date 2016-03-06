@@ -1,25 +1,24 @@
-<div class='container'>
-  {{custom-html "top"}}
-  {{global-notice}}
-  {{#if model}}
+{{#if model}}
+  <div class="container">
     {{discourse-banner user=currentUser banner=site.banner overlay=view.hasScrolled hide=model.errorLoading}}
-  {{/if}}
-</div>
+  </div>
+{{/if}}
 
 {{plugin-outlet "topic-above-post-stream"}}
 
 {{#if model.postStream.loaded}}
   {{#if model.postStream.firstPostPresent}}
-    <div id='topic-title'>
-      <div class='container'>
+    <div id="topic-title">
+      <div class="container">
 
         <div class="title-wrapper">
           {{#if editingTopic}}
             {{#if model.isPrivateMessage}}
               <span class="private-message-glyph">{{fa-icon "envelope"}}</span>
-              {{autofocus-text-field id='edit-title' value=buffered.title maxLength=maxTitleLength}}
-            {{else}}
-              {{autofocus-text-field id='edit-title' value=buffered.title maxLength=maxTitleLength}}
+            {{/if}}
+
+            {{text-field id="edit-title" value=buffered.title maxlength=siteSettings.max_topic_title_length autofocus="true"}}
+            {{#if showCategoryChooser}}
               <br>
               {{category-chooser valueAttribute="id" value=buffered.category_id source=buffered.category_id}}
             {{/if}}
@@ -31,18 +30,20 @@
           {{else}}
             <h1>
               {{#unless model.is_warning}}
-                <span class="private-message-glyph">{{fa-icon "envelope"}}</span>
+                <a href="{{view.pmPath}}">
+                  <span class="private-message-glyph">{{fa-icon "envelope"}}</span>
+                </a>
               {{/unless}}
 
               {{#if model.details.loaded}}
                 {{topic-status topic=model}}
-                <a href='{{unbound model.url}}' {{action "jumpTop"}} class='fancy-title'>
+                <a href="{{unbound model.url}}" {{action "jumpTop"}} class="fancy-title">
                   {{{model.fancyTitle}}}
                 </a>
               {{/if}}
 
               {{#if model.details.can_edit}}
-                <a href {{action "editTopic"}} class='edit-topic' title='{{i18n 'edit'}}'>{{fa-icon "pencil"}}</a>
+                <a href {{action "editTopic"}} class="edit-topic" title="{{i18n "edit"}}">{{fa-icon "pencil"}}</a>
               {{/if}}
             </h1>
 
@@ -57,58 +58,93 @@
   {{/if}}
 
   <div class="container posts">
-
     {{view "selected-posts"}}
 
     <div class="row">
-      <section class="topic-area" id='topic' data-topic-id='{{unbound model.id}}'>
-        <div class='posts-wrapper'>
+      <section class="topic-area" id="topic" data-topic-id="{{unbound model.id}}">
+        <div class="posts-wrapper">
 
-          {{render 'topic-progress'}}
+          {{render "topic-progress"}}
 
           {{conditional-loading-spinner condition=model.postStream.loadingAbove}}
 
           {{#unless model.postStream.loadingFilter}}
-            {{cloaked-collection itemViewClass="post"
-                                 idProperty="post_number"
-                                 defaultHeight="200"
-                                 content=model.postStream.posts
-                                 slackRatio="15"
-                                 loadingHTML=""
-                                 preservesContext="true"
-                                 uncloakDefault="true"
-                                 offsetFixedTop="header"
-                                 offsetFixedBottom="#reply-control"}}
+            {{scrolling-post-stream
+              posts=postsToRender
+              canCreatePost=model.details.can_create_post
+              multiSelect=multiSelect
+              selectedPostsCount=selectedPostsCount
+              selectedQuery=selectedQuery
+              gaps=model.postStream.gaps
+              showFlags="showFlags"
+              editPost="editPost"
+              showHistory="showHistory"
+              showRawEmail="showRawEmail"
+              deletePost="deletePost"
+              recoverPost="recoverPost"
+              expandHidden="expandHidden"
+              newTopicAction="replyAsNewTopic"
+              expandFirstPost="expandFirstPost"
+              toggleBookmark="toggleBookmark"
+              togglePostType="togglePostType"
+              rebakePost="rebakePost"
+              changePostOwner="changePostOwner"
+              unhidePost="unhidePost"
+              replyToPost="replyToPost"
+              toggleWiki="toggleWiki"
+              toggleParticipant="toggleParticipant"
+              toggleSummary="toggleSummary"
+              removeAllowedUser="removeAllowedUser"
+              showInvite="showInvite"
+              topVisibleChanged="topVisibleChanged"
+              bottomVisibleChanged="bottomVisibleChanged"
+              selectPost="toggledSelectedPost"
+              selectReplies="toggledSelectedPostReplies"
+              fillGapBefore="fillGapBefore"
+              fillGapAfter="fillGapAfter"}}
           {{/unless}}
-
-          {{conditional-loading-spinner condition=model.postStream.loadingBelow}}
         </div>
-        <div id='topic-bottom'></div>
+        <div id="topic-bottom"></div>
 
         {{#conditional-loading-spinner condition=model.postStream.loadingFilter}}
           {{#if loadedAllPosts}}
 
-            {{view 'topic-closing' topic=model}}
-            {{view 'topic-footer-buttons' topic=model}}
+            {{view "topic-closing" topic=model}}
+            {{#if session.showSignupCta}}
+              {{! replace "Log In to Reply" with the infobox }}
+              {{signup-cta}}
+            {{else}}
+              {{view "topic-footer-buttons" topic=model}}
+            {{/if}}
 
             {{#if model.pending_posts_count}}
-              <div class='has-pending-posts'>
+              <div class="has-pending-posts">
                 {{{i18n "queue.has_pending_posts" count=model.pending_posts_count}}}
 
-                {{#link-to 'queued-posts'}}
-                  {{fa-icon 'check'}}
-                  {{i18n 'queue.view_pending'}}
-                {{/link-to}}
+                {{#if currentUser.show_queued_posts}}
+                  {{#link-to "queued-posts"}}
+                    {{fa-icon "check"}}
+                    {{i18n "queue.view_pending"}}
+                  {{/link-to}}
+                {{/if}}
               </div>
             {{/if}}
 
             {{plugin-outlet "topic-above-suggested"}}
 
             {{#if model.details.suggested_topics.length}}
-              <div id='suggested-topics'>
-                <h3>{{i18n 'suggested_topics.title'}}</h3>
-                <div class='topics'>
+              <div id="suggested-topics">
+                <h3>{{{view.suggestedTitle}}}</h3>
+                <div class="topics">
+                  {{#if model.isPrivateMessage}}
+                  {{basic-topic-list
+                              hideCategory="true"
+                              showPosters="true"
+                              topics=model.details.suggested_topics
+                              postsAction="showTopicEntrance"}}
+                  {{else}}
                   {{basic-topic-list topics=model.details.suggested_topics postsAction="showTopicEntrance"}}
+                  {{/if}}
                 </div>
                 <h3>{{{view.browseMoreMessage}}}</h3>
               </div>
@@ -122,10 +158,10 @@
 
   </div>
 {{else}}
-  <div class='container'>
+  <div class="container">
     {{#conditional-loading-spinner condition=noErrorYet}}
       {{#if model.notFoundHtml}}
-        <div class='not-found'>{{{model.notFoundHtml}}}</div>
+        <div class="not-found">{{{model.notFoundHtml}}}</div>
       {{else}}
         <div class="topic-error">
           <div>{{model.message}}</div>
@@ -150,6 +186,67 @@
 {{/if}}
 
 {{#if currentUser.canManageTopic}}
-  {{show-topic-admin show="showTopicAdminMenu"}}
-  {{render "topic-admin-menu"}}
+  {{show-popup-button action="showTopicAdminMenu" class="show-topic-admin" title="topic_admin_menu" icon="wrench"}}
+  {{#popup-menu visible=adminMenuVisible hide="hideTopicAdminMenu" title="admin_title" extraClasses="topic-admin-popup-menu"}}
+    <li class="topic-admin-multi-select">
+      {{d-button action="toggleMultiSelect" icon="tasks" label="topic.actions.multi_select"}}
+    </li>
+
+    {{#if model.details.can_delete}}
+      <li class="topic-admin-delete">
+        {{d-button action="deleteTopic" icon="trash-o" label="topic.actions.delete" class="btn-danger"}}
+      </li>
+    {{/if}}
+
+    {{#if showRecover}}
+      <li class="topic-admin-recover">
+        {{d-button action="recoverTopic" icon="undo" label="topic.actions.recover"}}
+      </li>
+    {{/if}}
+
+    <li class="topic-admin-autoclose">
+      {{#if model.closed}}
+        {{d-button action="toggleClosed" icon="unlock" label="topic.actions.open"}}
+      {{else}}
+        {{d-button action="toggleClosed" icon="lock" label="topic.actions.close"}}
+        {{d-button action="showAutoClose" icon="clock-o" label="topic.actions.auto_close"}}
+      {{/if}}
+    </li>
+
+    {{#unless model.isPrivateMessage}}
+      {{#if model.visible}}
+        <li class="topic-admin-pin">
+          {{#if isFeatured}}
+            {{d-button action="showFeatureTopic" icon="thumb-tack" label="topic.actions.unpin"}}
+          {{else}}
+            {{d-button action="showFeatureTopic" icon="thumb-tack" label="topic.actions.pin"}}
+          {{/if}}
+        </li>
+      {{/if}}
+    {{/unless}}
+
+    <li class="topic-admin-change-timestamp">
+      {{d-button action="showChangeTimestamp" icon="calendar" label="topic.change_timestamp.title"}}
+    </li>
+
+    <li class="topic-admin-archive">
+      {{#if model.archived}}
+        {{d-button action="toggleArchived" icon="folder" label="topic.actions.unarchive"}}
+      {{else}}
+        {{#unless model.isPrivateMessage}}
+        {{d-button action="toggleArchived" icon="folder" label="topic.actions.archive"}}
+        {{/unless}}
+      {{/if}}
+    </li>
+
+    <li class="topic-admin-visible">
+      {{#if model.visible}}
+        {{d-button action="toggleVisibility" icon="eye-slash" label="topic.actions.invisible"}}
+      {{else}}
+        {{d-button action="toggleVisibility" icon="eye" label="topic.actions.visible"}}
+      {{/if}}
+    </li>
+
+    {{plugin-outlet "topic-admin-menu-buttons"}}
+  {{/popup-menu}}
 {{/if}}

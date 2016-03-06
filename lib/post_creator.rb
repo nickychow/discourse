@@ -54,7 +54,16 @@ class PostCreator
     # If we don't do this we introduce a rather risky dependency
     @user = user
     @opts = opts || {}
+    opts[:title] = pg_clean_up(opts[:title]) if opts[:title] && opts[:title].include?("\u0000")
+    opts[:raw] = pg_clean_up(opts[:raw]) if opts[:raw] && opts[:raw].include?("\u0000")
+    opts.delete(:reply_to_post_number) unless opts[:topic_id]
+    @guardian = opts[:guardian] if opts[:guardian]
+
     @spam = false
+  end
+
+  def pg_clean_up(str)
+    str.gsub("\u0000", "")
   end
 
   # True if the post was considered spam
@@ -125,6 +134,7 @@ class PostCreator
         create_embedded_topic
 
         ensure_in_allowed_users if guardian.is_staff?
+        unarchive_message
         @post.advance_draft_sequence
         @post.save_reply_relationships
       end
@@ -160,23 +170,31 @@ class PostCreator
   end
 
   def self.before_create_tasks(post)
-    set_reply_user_id(post)
+    set_reply_info(post)
 
-    post.word_count = post.raw.scan(/\w+/).size
+    post.word_count = post.raw.scan(/[[:word:]]+/).size
     post.post_number ||= Topic.next_post_number(post.topic_id, post.reply_to_post_number.present?)
 
     cooking_options = post.cooking_options || {}
     cooking_options[:topic_id] = post.topic_id
 
-    post.cooked ||= post.cook(post.raw, cooking_options)
+    post.cooked ||= post.cook(post.raw, cooking_options.symbolize_keys)
     post.sort_order = post.post_number
     post.last_version_at ||= Time.now
   end
 
-  def self.set_reply_user_id(post)
+  def self.set_reply_info(post)
     return unless post.reply_to_post_number.present?
 
-    post.reply_to_user_id ||= Post.select(:user_id).find_by(topic_id: post.topic_id, post_number: post.reply_to_post_number).try(:user_id)
+    reply_info = Post.where(topic_id: post.topic_id, post_number: post.reply_to_post_number)
+                     .select(:user_id, :post_type)
+                     .first
+
+    if reply_info.present?
+      post.reply_to_user_id ||= reply_info.user_id
+      whisper_type = Post.types[:whisper]
+      post.post_type = whisper_type if reply_info.post_type == whisper_type
+    end
   end
 
   protected
@@ -244,10 +262,26 @@ class PostCreator
   end
 
   def ensure_in_allowed_users
-    return unless @topic.private_message?
+    return unless @topic.private_message? && @topic.id
 
     unless @topic.topic_allowed_users.where(user_id: @user.id).exists?
-      @topic.topic_allowed_users.create!(user_id: @user.id)
+      unless @topic.topic_allowed_groups.where('group_id IN (
+                                              SELECT group_id FROM group_users where user_id = ?
+                                           )',@user.id).exists?
+        @topic.topic_allowed_users.create!(user_id: @user.id)
+      end
+    end
+  end
+
+  def unarchive_message
+    return unless @topic.private_message? && @topic.id
+
+    UserArchivedMessage.where(topic_id: @topic.id).pluck(:user_id).each do |user_id|
+      UserArchivedMessage.move_to_inbox!(user_id, @topic.id)
+    end
+
+    GroupArchivedMessage.where(topic_id: @topic.id).pluck(:group_id).each do |group_id|
+      GroupArchivedMessage.move_to_inbox!(group_id, @topic.id)
     end
   end
 
@@ -267,11 +301,15 @@ class PostCreator
   end
 
   def update_topic_stats
-    # Update attributes on the topic - featured users and last posted.
-    attrs = {last_posted_at: @post.created_at, last_post_user_id: @post.user_id}
-    attrs[:bumped_at] = @post.created_at unless @post.no_bump
-    attrs[:word_count] = (@topic.word_count || 0) + @post.word_count
+    return if @post.post_type == Post.types[:whisper]
+
+    attrs = {
+      last_posted_at: @post.created_at,
+      last_post_user_id: @post.user_id,
+      word_count: (@topic.word_count || 0) + @post.word_count,
+    }
     attrs[:excerpt] = @post.excerpt(220, strip_links: true) if new_topic?
+    attrs[:bumped_at] = @post.created_at unless @post.no_bump
     @topic.update_attributes(attrs)
   end
 
@@ -321,8 +359,10 @@ class PostCreator
       @user.user_stat.first_post_created_at = @post.created_at
     end
 
-    @user.user_stat.post_count += 1
-    @user.user_stat.topic_count += 1 if @post.is_first_post?
+    unless @post.topic.private_message?
+      @user.user_stat.post_count += 1
+      @user.user_stat.topic_count += 1 if @post.is_first_post?
+    end
 
     # We don't count replies to your own topics
     if !@opts[:import_mode] && @user.id != @topic.user_id
@@ -331,8 +371,7 @@ class PostCreator
 
     @user.user_stat.save!
 
-    @user.last_posted_at = @post.created_at
-    @user.save!
+    @user.update_attributes(last_posted_at: @post.created_at)
   end
 
   def publish
@@ -363,8 +402,11 @@ class PostCreator
                              post_number: @post.post_number,
                              msecs: 5000)
 
-
-    TopicUser.auto_track(@user.id, @topic.id, TopicUser.notification_reasons[:created_post])
+    if @user.staged
+      TopicUser.auto_watch(@user.id, @topic.id)
+    else
+      TopicUser.auto_track(@user.id, @topic.id, TopicUser.notification_reasons[:created_post])
+    end
   end
 
   def enqueue_jobs

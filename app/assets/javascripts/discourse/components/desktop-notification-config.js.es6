@@ -1,62 +1,66 @@
+import computed from 'ember-addons/ember-computed-decorators';
+import KeyValueStore from 'discourse/lib/key-value-store';
+
+const keyValueStore = new KeyValueStore("discourse_desktop_notifications_");
+
 export default Ember.Component.extend({
   classNames: ['controls'],
 
-  notificationsPermission: function() {
-    if (this.get('isNotSupported')) return '';
+  @computed("isNotSupported")
+  notificationsPermission(isNotSupported) {
+    return isNotSupported ? "" : Notification.permission;
+  },
 
-    return Notification.permission;
-  }.property(),
-
-  notificationsDisabled: function(_, value) {
-    if (arguments.length > 1) {
-      localStorage.setItem('notifications-disabled', value);
+  @computed
+  notificationsDisabled: {
+    set(value) {
+      keyValueStore.setItem('notifications-disabled', value);
+      return keyValueStore.getItem('notifications-disabled');
+    },
+    get() {
+      return keyValueStore.getItem('notifications-disabled');
     }
-    return localStorage.getItem('notifications-disabled');
-  }.property(),
+  },
 
+  @computed
+  isNotSupported() {
+    return typeof window.Notification === "undefined";
+  },
 
-  isNotSupported: function() {
-    return !window['Notification'];
-  }.property(),
+  @computed("isNotSupported", "notificationsPermission")
+  isDefaultPermission(isNotSupported, notificationsPermission) {
+    return isNotSupported ? false : notificationsPermission === "default";
+  },
 
-  isDefaultPermission: function() {
-    if (this.get('isNotSupported')) return false;
+  @computed("isNotSupported", "notificationsPermission")
+  isDeniedPermission(isNotSupported, notificationsPermission) {
+    return isNotSupported ? false : notificationsPermission === "denied";
+  },
 
-    return Notification.permission === "default";
-  }.property('isNotSupported', 'notificationsPermission'),
+  @computed("isNotSupported", "notificationsPermission")
+  isGrantedPermission(isNotSupported, notificationsPermission) {
+    return isNotSupported ? false : notificationsPermission === "granted";
+  },
 
-  isDeniedPermission: function() {
-    if (this.get('isNotSupported')) return false;
-
-    return Notification.permission === "denied";
-  }.property('isNotSupported', 'notificationsPermission'),
-
-  isGrantedPermission: function() {
-    if (this.get('isNotSupported')) return false;
-
-    return Notification.permission === "granted";
-  }.property('isNotSupported', 'notificationsPermission'),
-
-  isEnabled: function() {
-    if (!this.get('isGrantedPermission')) return false;
-
-    return !this.get('notificationsDisabled');
-  }.property('isGrantedPermission', 'notificationsDisabled'),
+  @computed("isGrantedPermission", "notificationsDisabled")
+  isEnabled(isGrantedPermission, notificationsDisabled) {
+    return isGrantedPermission ? !notificationsDisabled : false;
+  },
 
   actions: {
     requestPermission() {
-      const self = this;
-      Notification.requestPermission(function() {
-        self.propertyDidChange('notificationsPermission');
-      });
+      Notification.requestPermission(() => this.propertyDidChange('notificationsPermission'));
     },
+
     recheckPermission() {
       this.propertyDidChange('notificationsPermission');
     },
+
     turnoff() {
       this.set('notificationsDisabled', 'disabled');
       this.propertyDidChange('notificationsPermission');
     },
+
     turnon() {
       this.set('notificationsDisabled', '');
       this.propertyDidChange('notificationsPermission');

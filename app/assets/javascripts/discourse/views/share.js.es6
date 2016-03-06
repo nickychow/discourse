@@ -1,5 +1,5 @@
 
-export default Discourse.View.extend({
+export default Ember.View.extend({
   templateName: 'share',
   elementId: 'share-link',
   classNameBindings: ['hasLink'],
@@ -15,13 +15,13 @@ export default Discourse.View.extend({
   }.property('controller.type', 'controller.postNumber'),
 
   hasLink: function() {
-    if (this.present('controller.link')) return 'visible';
+    if (!Ember.isEmpty(this.get('controller.link'))) return 'visible';
     return null;
   }.property('controller.link'),
 
   linkChanged: function() {
     const self = this;
-    if (this.present('controller.link')) {
+    if (!Ember.isEmpty(this.get('controller.link'))) {
       Em.run.next(function() {
         if (!self.capabilities.touch) {
           var $linkInput = $('#share-link input');
@@ -56,26 +56,17 @@ export default Discourse.View.extend({
       return true;
     });
 
-    $html.on('click.discoure-share-link', '[data-share-url]', function(e) {
-      // if they want to open in a new tab, let it so
-      if (e.shiftKey || e.metaKey || e.ctrlKey || e.which === 2) { return true; }
-
-      e.preventDefault();
-
-      var $currentTarget = $(e.currentTarget),
-          $currentTargetOffset = $currentTarget.offset(),
-          $shareLink = $('#share-link'),
-          url = $currentTarget.data('share-url'),
-          postNumber = $currentTarget.data('post-number'),
-          date = $currentTarget.children().data('time');
+    function showPanel($target, url, postNumber, date) {
+      const $currentTargetOffset = $target.offset();
+      const $shareLink = $('#share-link');
 
       // Relative urls
       if (url.indexOf("/") === 0) {
         url = window.location.protocol + "//" + window.location.host + url;
       }
 
-      var shareLinkWidth = $shareLink.width();
-      var x = $currentTargetOffset.left - (shareLinkWidth / 2);
+      const shareLinkWidth = $shareLink.width();
+      let x = $currentTargetOffset.left - (shareLinkWidth / 2);
       if (x < 25) {
         x = 25;
       }
@@ -83,22 +74,36 @@ export default Discourse.View.extend({
         x -= shareLinkWidth / 2;
       }
 
-      var header = $('.d-header');
-      var y = $currentTargetOffset.top - ($shareLink.height() + 20);
+      const header = $('.d-header');
+      let y = $currentTargetOffset.top - ($shareLink.height() + 20);
       if (y < header.offset().top + header.height()) {
         y = $currentTargetOffset.top + 10;
       }
 
       $shareLink.css({top: "" + y + "px"});
 
-      if (!Discourse.Mobile.mobileView) {
+      if (!self.site.mobileView) {
         $shareLink.css({left: "" + x + "px"});
       }
 
       self.set('controller.link', url);
       self.set('controller.postNumber', postNumber);
       self.set('controller.date', date);
+    }
 
+    this.appEvents.on('share:url', (url, $target) => showPanel($target, url));
+
+    $html.on('click.discoure-share-link', '[data-share-url]', function(e) {
+      // if they want to open in a new tab, let it so
+      if (e.shiftKey || e.metaKey || e.ctrlKey || e.which === 2) { return true; }
+
+      e.preventDefault();
+
+      const $currentTarget = $(e.currentTarget),
+            url = $currentTarget.data('share-url'),
+            postNumber = $currentTarget.data('post-number'),
+            date = $currentTarget.children().data('time');
+      showPanel($currentTarget, url, postNumber, date);
       return false;
     });
 

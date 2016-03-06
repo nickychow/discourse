@@ -74,6 +74,26 @@ module Tilt
       rval
     end
 
+    def whitelisted?(path)
+
+      @@whitelisted ||= Set.new(
+        ["discourse/models/nav-item",
+         "discourse/models/user-action",
+         "discourse/routes/discourse",
+         "discourse/models/category",
+         "discourse/models/trust-level",
+         "discourse/models/site",
+         "discourse/models/user",
+         "discourse/models/session",
+         "discourse/models/model",
+         "discourse/models/topic",
+         "discourse/models/post",
+         "discourse/views/grouped"]
+      )
+
+      @@whitelisted.include?(path) || path =~ /discourse\/mixins/
+    end
+
     def evaluate(scope, locals, &block)
       return @output if @output
 
@@ -83,12 +103,10 @@ module Tilt
         @output = klass.v8.eval(generate_source(scope))
       end
 
-      source = @output.dup
-
       # For backwards compatibility with plugins, for now export the Global format too.
       # We should eventually have an upgrade system for plugins to use ES6 or some other
       # resolve based API.
-      if ENV['DISCOURSE_NO_CONSTANTS'].nil? &&
+      if whitelisted?(scope.logical_path) &&
         scope.logical_path =~ /(discourse|admin)\/(controllers|components|views|routes|mixins|models)\/(.*)/
 
         type = Regexp.last_match[2]
@@ -118,20 +136,6 @@ module Tilt
         end
       end
 
-      # Include JS code for JSHint
-      unless Rails.env.production?
-        if scope.pathname.to_s =~ /js\.es6/
-          extension = "js.es6"
-        elsif scope.pathname.to_s =~ /\.es6/
-          extension = "es6"
-        else
-          extension = "js"
-        end
-        req_path = "/assets/#{scope.logical_path}.#{extension}"
-
-        @output << "\nwindow.__jshintSrc = window.__jshintSrc || {}; window.__jshintSrc['#{req_path}'] = #{data.to_json};\n"
-      end
-
       @output
     end
 
@@ -139,7 +143,7 @@ module Tilt
 
     def generate_source(scope)
       js_source = ::JSON.generate(data, quirks_mode: true)
-      js_source = "babel.transform(#{js_source}, {ast: false, whitelist: ['es6.constants', 'es6.properties.shorthand', 'es6.arrowFunctions', 'es6.blockScoping', 'es6.destructuring', 'es6.templateLiterals', 'es6.regex.unicode']})['code']"
+      js_source = "babel.transform(#{js_source}, {ast: false, whitelist: ['es6.constants', 'es6.properties.shorthand', 'es6.arrowFunctions', 'es6.blockScoping', 'es6.destructuring', 'es6.spread', 'es6.parameters', 'es6.templateLiterals', 'es6.regex.unicode', 'es7.decorators', 'es6.classes']})['code']"
       "new module.exports.Compiler(#{js_source}, '#{module_name(scope.root_path, scope.logical_path)}', #{compiler_options}).#{compiler_method}()"
     end
 

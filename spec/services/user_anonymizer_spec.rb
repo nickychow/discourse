@@ -1,10 +1,10 @@
-require "spec_helper"
+require "rails_helper"
 
 describe UserAnonymizer do
 
   describe "make_anonymous" do
     let(:admin) { Fabricate(:admin) }
-    let(:user) { Fabricate(:user, username: "edward") }
+    let(:user) { Fabricate(:user, username: "edward", auth_token: "mysecretauthtoken") }
 
     subject(:make_anonymous) { described_class.make_anonymous(user, admin) }
 
@@ -19,13 +19,17 @@ describe UserAnonymizer do
     end
 
     it "turns off all notifications" do
+      user.user_option.update_columns(
+        email_always: true
+      )
+
       make_anonymous
       user.reload
-      expect(user.email_digests).to eq(false)
-      expect(user.email_private_messages).to eq(false)
-      expect(user.email_direct).to eq(false)
-      expect(user.email_always).to eq(false)
-      expect(user.mailing_list_mode).to eq(false)
+      expect(user.user_option.email_digests).to eq(false)
+      expect(user.user_option.email_private_messages).to eq(false)
+      expect(user.user_option.email_direct).to eq(false)
+      expect(user.user_option.email_always).to eq(false)
+      expect(user.user_option.mailing_list_mode).to eq(false)
     end
 
     it "resets profile to default values" do
@@ -45,6 +49,7 @@ describe UserAnonymizer do
       expect(user.name).not_to be_present
       expect(user.date_of_birth).to eq(nil)
       expect(user.title).not_to be_present
+      expect(user.auth_token).to eq(nil)
 
       profile = user.user_profile(true)
       expect(profile.location).to eq(nil)
@@ -58,10 +63,12 @@ describe UserAnonymizer do
     it "removes the avatar" do
       upload = Fabricate(:upload, user: user)
       user.user_avatar = UserAvatar.new(user_id: user.id, custom_upload_id: upload.id)
+      user.uploaded_avatar_id = upload.id # chosen in user preferences
       user.save!
       expect { make_anonymous }.to change { Upload.count }.by(-1)
       user.reload
       expect(user.user_avatar).to eq(nil)
+      expect(user.uploaded_avatar_id).to eq(nil)
     end
 
     it "logs the action" do

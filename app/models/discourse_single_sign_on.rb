@@ -81,19 +81,21 @@ class DiscourseSingleSignOn < SingleSignOn
   private
 
   def match_email_or_create_user(ip_address)
-    user = User.find_by_email(email)
+    unless user = User.find_by_email(email)
+      try_name = name.presence
+      try_username = username.presence
 
-    try_name = name.blank? ? nil : name
-    try_username = username.blank? ? nil : username
+      user_params = {
+        email: email,
+        name: try_name || User.suggest_name(try_username || email),
+        username: UserNameSuggester.suggest(try_username || try_name || email),
+        ip_address: ip_address
+      }
 
-    user_params = {
-      email: email,
-      name:  try_name || User.suggest_name(try_username || email),
-      username: UserNameSuggester.suggest(try_username || try_name || email),
-      ip_address: ip_address
-    }
+      user = User.create!(user_params)
+    end
 
-    if user || user = User.create!(user_params)
+    if user
       if sso_record = user.single_sign_on_record
         sso_record.last_payload = unsigned_payload
         sso_record.external_id = external_id
@@ -114,12 +116,11 @@ class DiscourseSingleSignOn < SingleSignOn
       user.email = email
     end
 
-    if SiteSetting.sso_overrides_username &&
-        user.username != username
+    if SiteSetting.sso_overrides_username && user.username != username && username.present?
       user.username = UserNameSuggester.suggest(username || name || email, user.username)
     end
 
-    if SiteSetting.sso_overrides_name && user.name != name
+    if SiteSetting.sso_overrides_name && user.name != name && name.present?
       user.name = name || User.suggest_name(username.blank? ? email : username)
     end
 

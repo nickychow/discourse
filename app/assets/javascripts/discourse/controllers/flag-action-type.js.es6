@@ -1,8 +1,7 @@
-import ObjectController from 'discourse/controllers/object';
 import { MAX_MESSAGE_LENGTH } from 'discourse/models/post-action-type';
 
 // Supports logic for flags in the modal
-export default ObjectController.extend({
+export default Ember.Controller.extend({
   needs: ['flag'],
 
   message: Em.computed.alias('controllers.flag.message'),
@@ -25,6 +24,7 @@ export default ObjectController.extend({
 
   showMessageInput: Em.computed.and('model.is_custom_flag', 'selected'),
   showDescription: Em.computed.not('showMessageInput'),
+  isNotifyUser: Em.computed.equal('model.name_key', 'notify_user'),
 
   customMessageLengthClasses: function() {
     return (this.get('message.length') < Discourse.SiteSettings.min_private_message_post_length) ? "too-short" : "ok";
@@ -45,4 +45,3 @@ export default ObjectController.extend({
   }.property('message.length')
 
 });
-

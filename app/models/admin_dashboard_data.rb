@@ -6,6 +6,7 @@ class AdminDashboardData
   GLOBAL_REPORTS ||= [
     'visits',
     'signups',
+    'profile_views',
     'topics',
     'posts',
     'time_to_first_response',
@@ -32,30 +33,43 @@ class AdminDashboardData
 
   MOBILE_REPORTS ||= ['mobile_visits'] + ApplicationRequest.req_types.keys.select {|r| r =~ /mobile/}.map { |r| r + "_reqs" }
 
+  def self.add_problem_check(*syms, &blk)
+    @problem_syms.push(*syms) if syms
+    @problem_blocks << blk if blk
+  end
+  class << self; attr_reader :problem_syms, :problem_blocks; end
+
   def problems
-    [ rails_env_check,
-      ruby_version_check,
-      host_names_check,
-      gc_checks,
-      sidekiq_check,
-      ram_check,
-      google_oauth2_config_check,
-      facebook_config_check,
-      twitter_config_check,
-      github_config_check,
-      s3_config_check,
-      image_magick_check,
-      failing_emails_check,
-      default_logo_check,
-      contact_email_check,
-      send_consumer_email_check,
-      title_check,
-      site_description_check,
-      site_contact_username_check,
-      notification_email_check
-    ].compact
+    problems = []
+    AdminDashboardData.problem_syms.each do |sym|
+      problems << send(sym)
+    end
+    AdminDashboardData.problem_blocks.each do |blk|
+      problems << instance_exec(&blk)
+    end
+    problems.compact
   end
 
+  # used for testing
+  def self.reset_problem_checks
+    @problem_syms = []
+    @problem_blocks = []
+
+    add_problem_check :rails_env_check, :ruby_version_check, :host_names_check,
+                      :gc_checks, :ram_check, :google_oauth2_config_check,
+                      :facebook_config_check, :twitter_config_check,
+                      :github_config_check, :s3_config_check, :image_magick_check,
+                      :failing_emails_check, :default_logo_check, :contact_email_check,
+                      :send_consumer_email_check, :title_check,
+                      :site_description_check, :site_contact_username_check,
+                      :notification_email_check, :subfolder_ends_in_slash_check,
+                      :pop3_polling_configuration
+
+    add_problem_check do
+      sidekiq_check || queue_size_check
+    end
+  end
+  reset_problem_checks
 
   def self.fetch_stats
     AdminDashboardData.new.as_json
@@ -107,6 +121,11 @@ class AdminDashboardData
   def sidekiq_check
     last_job_performed_at = Jobs.last_job_performed_at
     I18n.t('dashboard.sidekiq_warning') if Jobs.queued > 0 and (last_job_performed_at.nil? or last_job_performed_at < 2.minutes.ago)
+  end
+
+  def queue_size_check
+    queue_size = Jobs.queued
+    I18n.t('dashboard.queue_size_warning', queue_size: queue_size) unless queue_size < 100_000
   end
 
   def ram_check
@@ -181,6 +200,14 @@ class AdminDashboardData
 
   def ruby_version_check
     I18n.t('dashboard.ruby_version_warning') if RUBY_VERSION == '2.0.0' and RUBY_PATCHLEVEL < 247
+  end
+
+  def subfolder_ends_in_slash_check
+    I18n.t('dashboard.subfolder_ends_in_slash') if Discourse.base_uri =~ /\/$/
+  end
+
+  def pop3_polling_configuration
+    POP3PollingEnabledSettingValidator.new.error_message if SiteSetting.pop3_polling_enabled
   end
 
 end

@@ -1,4 +1,4 @@
-require 'spec_helper'
+require 'rails_helper'
 require 'topic_view'
 
 describe TopicQuery do
@@ -294,8 +294,8 @@ describe TopicQuery do
 
       context 'user with auto_track_topics list_unread' do
         before do
-          user.auto_track_topics_after_msecs = 0
-          user.save
+          user.user_option.auto_track_topics_after_msecs = 0
+          user.user_option.save
         end
 
         it 'only contains the partially read topic' do
@@ -320,21 +320,51 @@ describe TopicQuery do
       end
     end
 
+    context 'preload api' do
+      let(:topics) { }
+
+      it "preloads data correctly" do
+        TopicList.preloaded_custom_fields << "tag"
+        TopicList.preloaded_custom_fields << "age"
+        TopicList.preloaded_custom_fields << "foo"
+
+        topic = Fabricate.build(:topic, user: creator, bumped_at: 10.minutes.ago)
+        topic.custom_fields["tag"] = ["a","b","c"]
+        topic.custom_fields["age"] = 22
+        topic.save
+
+        new_topic = topic_query.list_new.topics.first
+
+        expect(new_topic.custom_fields["tag"].sort).to eq(["a","b","c"])
+        expect(new_topic.custom_fields["age"]).to eq("22")
+
+        expect(new_topic.custom_field_preloaded?("tag")).to eq(true)
+        expect(new_topic.custom_field_preloaded?("age")).to eq(true)
+        expect(new_topic.custom_field_preloaded?("foo")).to eq(true)
+        expect(new_topic.custom_field_preloaded?("bar")).to eq(false)
+
+        TopicList.preloaded_custom_fields.clear
+
+        # if we attempt to access non preloaded fields explode
+        expect{new_topic.custom_fields["boom"]}.to raise_error
+
+      end
+    end
+
     context 'with a new topic' do
       let!(:new_topic) { Fabricate(:topic, user: creator, bumped_at: 10.minutes.ago) }
       let(:topics) { topic_query.list_new.topics }
 
 
-      it "contains the new topic" do
-        expect(topics).to eq([new_topic])
-      end
-
       it "contains no new topics for a user that has missed the window" do
-        user.new_topic_duration_minutes = 5
-        user.save
+
+        expect(topic_query.list_new.topics).to eq([new_topic])
+
+        user.user_option.new_topic_duration_minutes = 5
+        user.user_option.save
         new_topic.created_at = 10.minutes.ago
         new_topic.save
-        expect(topics).to eq([])
+        expect(topic_query.list_new.topics).to eq([])
       end
 
       context "muted topics" do
@@ -344,6 +374,7 @@ describe TopicQuery do
 
         it "returns an empty set" do
           expect(topics).to be_blank
+          expect(topic_query.list_latest.topics).to be_blank
         end
 
         context 'un-muted' do
@@ -353,6 +384,7 @@ describe TopicQuery do
 
           it "returns the topic again" do
             expect(topics).to eq([new_topic])
+            expect(topic_query.list_latest.topics).not_to be_blank
           end
         end
       end
@@ -414,8 +446,70 @@ describe TopicQuery do
     end
   end
 
-  context 'suggested_for' do
+  context 'suggested_for message do' do
 
+    let(:user) do
+      Fabricate(:admin)
+    end
+
+    let(:sender) do
+      Fabricate(:admin)
+    end
+
+    let(:group_with_user) do
+      group = Fabricate(:group)
+      group.add(user)
+      group.save
+      group
+    end
+
+    def create_pm(user, opts=nil)
+      unless opts
+        opts = user
+        user = nil
+      end
+
+      create_post(opts.merge(user: user, archetype: Archetype.private_message)).topic
+    end
+
+    def read(user,topic,post_number)
+      TopicUser.update_last_read(user, topic, post_number, 10000)
+    end
+
+    it 'returns the correct suggestions' do
+
+
+      pm_to_group  = create_pm(sender, target_group_names: [group_with_user.name])
+      pm_to_user = create_pm(sender, target_usernames: [user.username])
+
+      new_pm  = create_pm(target_usernames: [user.username])
+
+      unread_pm  = create_pm(target_usernames: [user.username])
+      read(user,unread_pm, 0)
+
+      old_unrelated_pm = create_pm(target_usernames: [user.username])
+      read(user, old_unrelated_pm, 1)
+
+
+      related_by_user_pm = create_pm(sender, target_usernames: [user.username])
+      read(user, related_by_user_pm, 1)
+
+
+      related_by_group_pm  = create_pm(sender, target_group_names: [group_with_user.name])
+      read(user, related_by_group_pm, 1)
+
+
+      expect(TopicQuery.new(user).list_suggested_for(pm_to_group).topics.map(&:id)).to(
+        eq([related_by_group_pm.id, related_by_user_pm.id, pm_to_user.id])
+      )
+
+      expect(TopicQuery.new(user).list_suggested_for(pm_to_user).topics.map(&:id)).to(
+        eq([new_pm.id, unread_pm.id, related_by_user_pm.id])
+      )
+    end
+  end
+
+  context 'suggested_for' do
 
     before do
       RandomTopicSelector.clear_cache!
@@ -467,8 +561,8 @@ describe TopicQuery do
         let!(:fully_read_archived) { Fabricate(:post, user: creator).topic }
 
         before do
-          user.auto_track_topics_after_msecs = 0
-          user.save
+          user.user_option.auto_track_topics_after_msecs = 0
+          user.user_option.save
           TopicUser.update_last_read(user, partially_read.id, 0, 0)
           TopicUser.update_last_read(user, fully_read.id, 1, 0)
           TopicUser.update_last_read(user, fully_read_closed.id, 1, 0)

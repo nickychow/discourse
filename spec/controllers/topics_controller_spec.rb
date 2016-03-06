@@ -1,4 +1,22 @@
-require 'spec_helper'
+require 'rails_helper'
+
+def topics_controller_show_gen_perm_tests(expected, ctx)
+  expected.each do |sym, status|
+    params = "topic_id: #{sym}.id, slug: #{sym}.slug"
+    if sym == :nonexist
+      params = "topic_id: nonexist_topic_id"
+    end
+    ctx.instance_eval("
+it 'returns #{status} for #{sym}' do
+  begin
+    xhr :get, :show, #{params}
+    expect(response.status).to eq(#{status})
+  rescue Discourse::NotLoggedIn
+    expect(302).to eq(#{status})
+  end
+end")
+  end
+end
 
 describe TopicsController do
 
@@ -9,6 +27,8 @@ describe TopicsController do
     let!(:p2) { Fabricate(:post, topic: topic, user:user )}
 
     it "returns the JSON in the format our wordpress plugin needs" do
+      SiteSetting.external_system_avatars_enabled = false
+
       xhr :get, :wordpress, topic_id: topic.id, best: 3
       expect(response).to be_success
       json = ::JSON.parse(response.body)
@@ -263,6 +283,45 @@ describe TopicsController do
     end
   end
 
+  context 'change_timestamps' do
+    let(:params) { { topic_id: 1, timestamp: Time.zone.now } }
+
+    it 'needs you to be logged in' do
+      expect { xhr :put, :change_timestamps, params }.to raise_error(Discourse::NotLoggedIn)
+    end
+
+    [:moderator, :trust_level_4].each do |user|
+      describe "forbidden to #{user}" do
+        let!(user) { log_in(user) }
+
+        it 'correctly denies' do
+          xhr :put, :change_timestamps, params
+          expect(response).to be_forbidden
+        end
+      end
+    end
+
+    describe 'changing timestamps' do
+      let!(:admin) { log_in(:admin) }
+      let(:old_timestamp) { Time.zone.now }
+      let(:new_timestamp) { old_timestamp - 1.day }
+      let!(:topic) { Fabricate(:topic, created_at: old_timestamp) }
+      let!(:p1) { Fabricate(:post, topic_id: topic.id, created_at: old_timestamp) }
+      let!(:p2) { Fabricate(:post, topic_id: topic.id, created_at: old_timestamp + 1.day) }
+
+      it 'raises an error with a missing parameter' do
+        expect { xhr :put, :change_timestamps, topic_id: 1 }.to raise_error(ActionController::ParameterMissing)
+      end
+
+      it 'should update the timestamps of selected posts' do
+        xhr :put, :change_timestamps, topic_id: topic.id, timestamp: new_timestamp.to_f
+        expect(topic.reload.created_at).to be_within_one_second_of(new_timestamp)
+        expect(p1.reload.created_at).to be_within_one_second_of(new_timestamp)
+        expect(p2.reload.created_at).to be_within_one_second_of(old_timestamp)
+      end
+    end
+  end
+
   context 'clear_pin' do
     it 'needs you to be logged in' do
       expect { xhr :put, :clear_pin, topic_id: 1 }.to raise_error(Discourse::NotLoggedIn)
@@ -462,6 +521,17 @@ describe TopicsController do
     end
   end
 
+  describe 'show full render' do
+    render_views
+
+    it 'correctly renders canoicals' do
+      topic = Fabricate(:post).topic
+      get :show, topic_id: topic.id, slug: topic.slug
+      expect(response).to be_success
+      expect(css_select("link[rel=canonical]").length).to eq(1)
+    end
+  end
+
   describe 'show' do
 
     let(:topic) { Fabricate(:post).topic }
@@ -493,6 +563,11 @@ describe TopicsController do
       expect(response).to redirect_to(topic.relative_url + "/42?page=123")
     end
 
+    it 'does not accept page params as an array' do
+      xhr :get, :show, id: topic.slug, post_number: 42, page: [2]
+      expect(response).to redirect_to("#{topic.relative_url}/42?page=1")
+    end
+
     it 'returns 404 when an invalid slug is given and no id' do
       xhr :get, :show, id: 'nope-nope'
       expect(response.status).to eq(404)
@@ -512,6 +587,122 @@ describe TopicsController do
       it 'returns a 404 when slug and topic id do not match a topic' do
         xhr :get, :show, topic_id: 123123, slug: 'topic-that-is-made-up'
         expect(response.status).to eq(404)
+      end
+    end
+
+    context 'permission errors' do
+      let(:allowed_user) { Fabricate(:user) }
+      let(:allowed_group) { Fabricate(:group) }
+      let(:secure_category) {
+        c = Fabricate(:category)
+        c.permissions = [[allowed_group, :full]]
+        c.save
+        allowed_user.groups = [allowed_group]
+        allowed_user.save
+        c }
+      let(:normal_topic) { Fabricate(:topic) }
+      let(:secure_topic) { Fabricate(:topic, category: secure_category) }
+      let(:private_topic) { Fabricate(:private_message_topic, user: allowed_user) }
+      let(:deleted_topic) { Fabricate(:deleted_topic) }
+      let(:deleted_secure_topic) { Fabricate(:topic, category: secure_category, deleted_at: 1.day.ago) }
+      let(:deleted_private_topic) { Fabricate(:private_message_topic, user: allowed_user, deleted_at: 1.day.ago) }
+      let(:nonexist_topic_id) { Topic.last.id + 10000 }
+
+      context 'anonymous' do
+        expected = {
+          :normal_topic => 200,
+          :secure_topic => 403,
+          :private_topic => 302,
+          :deleted_topic => 410,
+          :deleted_secure_topic => 403,
+          :deleted_private_topic => 302,
+          :nonexist => 404
+        }
+        topics_controller_show_gen_perm_tests(expected, self)
+      end
+
+      context 'anonymous with login required' do
+        before do
+          SiteSetting.login_required = true
+        end
+        expected = {
+          :normal_topic => 302,
+          :secure_topic => 302,
+          :private_topic => 302,
+          :deleted_topic => 302,
+          :deleted_secure_topic => 302,
+          :deleted_private_topic => 302,
+          :nonexist => 302
+        }
+        topics_controller_show_gen_perm_tests(expected, self)
+      end
+
+      context 'normal user' do
+        before do
+          log_in(:user)
+        end
+
+        expected = {
+          :normal_topic => 200,
+          :secure_topic => 403,
+          :private_topic => 403,
+          :deleted_topic => 410,
+          :deleted_secure_topic => 403,
+          :deleted_private_topic => 403,
+          :nonexist => 404
+        }
+        topics_controller_show_gen_perm_tests(expected, self)
+      end
+
+      context 'allowed user' do
+        before do
+          log_in_user(allowed_user)
+        end
+
+        expected = {
+          :normal_topic => 200,
+          :secure_topic => 200,
+          :private_topic => 200,
+          :deleted_topic => 410,
+          :deleted_secure_topic => 410,
+          :deleted_private_topic => 410,
+          :nonexist => 404
+        }
+        topics_controller_show_gen_perm_tests(expected, self)
+      end
+
+      context 'moderator' do
+        before do
+          log_in(:moderator)
+        end
+
+        expected = {
+          :normal_topic => 200,
+          :secure_topic => 403,
+          :private_topic => 403,
+          :deleted_topic => 200,
+          :deleted_secure_topic => 403,
+          :deleted_private_topic => 403,
+          :nonexist => 404
+        }
+        topics_controller_show_gen_perm_tests(expected, self)
+      end
+
+      context 'admin' do
+        before do
+          log_in(:admin)
+        end
+
+        expected = {
+          :normal_topic => 200,
+          :secure_topic => 200,
+          :private_topic => 200,
+          :deleted_topic => 200,
+          :deleted_secure_topic => 200,
+          :deleted_private_topic => 200,
+          :nonexist => 404
+        }
+        topics_controller_show_gen_perm_tests(expected, self)
       end
     end
 
@@ -753,7 +944,7 @@ describe TopicsController do
 
     describe 'when logged in as group manager' do
       let(:group_manager) { log_in }
-      let(:group) { Fabricate(:group).tap { |g| g.add(group_manager); g.appoint_manager(group_manager) } }
+      let(:group) { Fabricate(:group).tap { |g| g.add_owner(group_manager) } }
       let(:private_category)  { Fabricate(:private_category, group: group) }
       let(:group_private_topic) { Fabricate(:topic, category: private_category, user: group_manager) }
       let(:recipient) { 'jake@adventuretime.ooo' }
@@ -838,6 +1029,46 @@ describe TopicsController do
         Topic.any_instance.expects(:set_auto_close).with(nil, anything)
         xhr :put, :autoclose, topic_id: @topic.id, auto_close_time: nil, auto_close_based_on_last_post: false, timezone_offset: -240
       end
+
+      it "will close a topic when the time expires" do
+        topic = Fabricate(:topic)
+        Timecop.freeze(20.hours.ago) do
+          create_post(topic: topic, raw: "This is the body of my cool post in the topic, but it's a bit old now")
+        end
+        topic.save
+
+        Jobs.expects(:enqueue_at).at_least_once
+        xhr :put, :autoclose, topic_id: topic.id, auto_close_time: 24, auto_close_based_on_last_post: true
+
+        topic.reload
+        expect(topic.closed).to eq(false)
+        expect(topic.posts.last.raw).to match(/cool post/)
+
+        Timecop.freeze(5.hours.from_now) do
+          Jobs::CloseTopic.new.execute({topic_id: topic.id, user_id: @admin.id})
+        end
+
+        topic.reload
+        expect(topic.closed).to eq(true)
+        expect(topic.posts.last.raw).to match(/automatically closed/)
+      end
+
+      it "will immediately close if the last post is old enough" do
+        topic = Fabricate(:topic)
+        Timecop.freeze(20.hours.ago) do
+          create_post(topic: topic)
+        end
+        topic.save
+        Topic.reset_highest(topic.id)
+        topic.reload
+
+        xhr :put, :autoclose, topic_id: topic.id, auto_close_time: 10, auto_close_based_on_last_post: true
+
+        topic.reload
+        expect(topic.closed).to eq(true)
+        expect(topic.posts.last.raw).to match(/after the last reply/)
+        expect(topic.posts.last.raw).to match(/10 hours/)
+      end
     end
 
   end
@@ -910,7 +1141,7 @@ describe TopicsController do
 
       it "delegates work to `TopicsBulkAction`" do
         topics_bulk_action = mock
-        TopicsBulkAction.expects(:new).with(user, topic_ids, operation).returns(topics_bulk_action)
+        TopicsBulkAction.expects(:new).with(user, topic_ids, operation, group: nil).returns(topics_bulk_action)
         topics_bulk_action.expects(:perform!)
         xhr :put, :bulk, topic_ids: topic_ids, operation: operation
       end

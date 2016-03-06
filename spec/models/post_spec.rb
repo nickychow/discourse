@@ -1,8 +1,56 @@
-require 'spec_helper'
+require 'rails_helper'
 require_dependency 'post_destroyer'
 
 describe Post do
   before { Oneboxer.stubs :onebox }
+
+  describe '#hidden_reasons' do
+    context "verify enum sequence" do
+      before do
+        @hidden_reasons = Post.hidden_reasons
+      end
+
+      it "'flag_threshold_reached' should be at 1st position" do
+        expect(@hidden_reasons[:flag_threshold_reached]).to eq(1)
+      end
+
+      it "'flagged_by_tl3_user' should be at 4th position" do
+        expect(@hidden_reasons[:flagged_by_tl3_user]).to eq(4)
+      end
+    end
+  end
+
+  describe '#types' do
+    context "verify enum sequence" do
+      before do
+        @types = Post.types
+      end
+
+      it "'regular' should be at 1st position" do
+        expect(@types[:regular]).to eq(1)
+      end
+
+      it "'whisper' should be at 4th position" do
+        expect(@types[:whisper]).to eq(4)
+      end
+    end
+  end
+
+  describe '#cook_methods' do
+    context "verify enum sequence" do
+      before do
+        @cook_methods = Post.cook_methods
+      end
+
+      it "'regular' should be at 1st position" do
+        expect(@cook_methods[:regular]).to eq(1)
+      end
+
+      it "'email' should be at 3rd position" do
+        expect(@cook_methods[:email]).to eq(3)
+      end
+    end
+  end
 
   # Help us build a post with a raw body
   def post_with_body(body, user=nil)
@@ -378,6 +426,11 @@ describe Post do
         expect(post.raw_mentions).to eq(['jake', 'finn', 'jake_old'])
       end
 
+      it "handles hyphen in groupname" do
+        post = Fabricate.build(:post, post_args.merge(raw: "@org-board"))
+        expect(post.raw_mentions).to eq(['org-board'])
+      end
+
     end
 
     context "max mentions" do
@@ -481,7 +534,7 @@ describe Post do
 
     describe 'ninja editing & edit windows' do
 
-      before { SiteSetting.stubs(:ninja_edit_window).returns(1.minute.to_i) }
+      before { SiteSetting.stubs(:editing_grace_period).returns(1.minute.to_i) }
 
       it 'works' do
         revised_at = post.updated_at + 2.minutes
@@ -548,7 +601,7 @@ describe Post do
       context 'second poster posts again quickly' do
 
         it 'is a ninja edit, because the second poster posted again quickly' do
-          SiteSetting.expects(:ninja_edit_window).returns(1.minute.to_i)
+          SiteSetting.expects(:editing_grace_period).returns(1.minute.to_i)
           post.revise(changed_by, { raw: 'yet another updated body' }, revised_at: post.updated_at + 10.seconds)
           post.reload
 

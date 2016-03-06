@@ -1,4 +1,4 @@
-require "spec_helper"
+require "rails_helper"
 require "cooked_post_processor"
 
 describe CookedPostProcessor do
@@ -114,13 +114,15 @@ describe CookedPostProcessor do
 
         # hmmm this should be done in a cleaner way
         OptimizedImage.expects(:resize).returns(true)
+
+        FileStore::BaseStore.any_instance.expects(:get_depth_for).returns(0)
       end
 
       it "generates overlay information" do
         cpp.post_process_images
-        expect(cpp.html).to match_html '<div class="lightbox-wrapper"><a data-download-href="/uploads/default/e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" href="/uploads/default/1/1234567890123456.jpg" class="lightbox" title="logo.png"><img src="/uploads/default/optimized/1X/e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98_1_690x1380.png" width="690" height="1380"><div class="meta">
+        expect(cpp.html).to match_html '<p><div class="lightbox-wrapper"><a data-download-href="/uploads/default/e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" href="/uploads/default/1/1234567890123456.jpg" class="lightbox" title="logo.png"><img src="/uploads/default/optimized/1X/e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98_1_690x1380.png" width="690" height="1380"><div class="meta">
 <span class="filename">logo.png</span><span class="informations">1000x2000 1.21 KB</span><span class="expand"></span>
-</div></a></div>'
+</div></a></div></p>'
         expect(cpp).to be_dirty
       end
 
@@ -141,13 +143,14 @@ describe CookedPostProcessor do
 
         # hmmm this should be done in a cleaner way
         OptimizedImage.expects(:resize).returns(true)
+        FileStore::BaseStore.any_instance.expects(:get_depth_for).returns(0)
       end
 
       it "generates overlay information" do
         cpp.post_process_images
-        expect(cpp.html).to match_html '<div class="lightbox-wrapper"><a data-download-href="/uploads/default/e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" href="/uploads/default/1/1234567890123456.jpg" class="lightbox" title="WAT"><img src="/uploads/default/optimized/1X/e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98_1_690x1380.png" title="WAT" width="690" height="1380"><div class="meta">
+        expect(cpp.html).to match_html '<p><div class="lightbox-wrapper"><a data-download-href="/uploads/default/e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" href="/uploads/default/1/1234567890123456.jpg" class="lightbox" title="WAT"><img src="/uploads/default/optimized/1X/e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98_1_690x1380.png" title="WAT" width="690" height="1380"><div class="meta">
        <span class="filename">WAT</span><span class="informations">1000x2000 1.21 KB</span><span class="expand"></span>
-       </div></a></div>'
+       </div></a></div></p>'
         expect(cpp).to be_dirty
       end
 
@@ -173,11 +176,42 @@ describe CookedPostProcessor do
 
   context ".extract_images" do
 
-    let(:post) { build(:post_with_images_in_quote_and_onebox) }
+    let(:post) { build(:post_with_plenty_of_images) }
     let(:cpp) { CookedPostProcessor.new(post) }
 
-    it "does not extract images inside oneboxes or quotes" do
+    it "does not extract emojis or images inside oneboxes or quotes" do
       expect(cpp.extract_images.length).to eq(0)
+    end
+
+  end
+
+  context ".get_size_from_attributes" do
+
+    let(:post) { build(:post) }
+    let(:cpp) { CookedPostProcessor.new(post) }
+
+    it "returns the size when width and height are specified" do
+      img = { 'src' => 'http://foo.bar/image3.png', 'width' => 50, 'height' => 70}
+      expect(cpp.get_size_from_attributes(img)).to eq([50, 70])
+    end
+
+    it "returns the size when width and height are floats" do
+      img = { 'src' => 'http://foo.bar/image3.png', 'width' => 50.2, 'height' => 70.1}
+      expect(cpp.get_size_from_attributes(img)).to eq([50, 70])
+    end
+
+    it "resizes when only width is specified" do
+      img = { 'src' => 'http://foo.bar/image3.png', 'width' => 100}
+      SiteSetting.stubs(:crawl_images?).returns(true)
+      FastImage.expects(:size).returns([200, 400])
+      expect(cpp.get_size_from_attributes(img)).to eq([100, 200])
+    end
+
+    it "resizes when only height is specified" do
+      img = { 'src' => 'http://foo.bar/image3.png', 'height' => 100}
+      SiteSetting.stubs(:crawl_images?).returns(true)
+      FastImage.expects(:size).returns([100, 300])
+      expect(cpp.get_size_from_attributes(img)).to eq([33, 100])
     end
 
   end
@@ -310,9 +344,7 @@ describe CookedPostProcessor do
 
     it "uses schemaless url for uploads" do
       cpp.optimize_urls
-      expect(cpp.html).to match_html '<a href="//test.localhost/uploads/default/2/2345678901234567.jpg">Link</a>
-       <img src="//test.localhost/uploads/default/1/1234567890123456.jpg"><a href="http://www.google.com">Google</a>
-       <img src="http://foo.bar/image.png">'
+      expect(cpp.html).to match_html '<p><a href="//test.localhost/uploads/default/2/2345678901234567.jpg">Link</a><br><img src="//test.localhost/uploads/default/1/1234567890123456.jpg"><br><a href="http://www.google.com" rel="nofollow">Google</a><br><img src="http://foo.bar/image.png"><br><a class="attachment" href="//test.localhost/uploads/default/original/1X/af2c2618032c679333bebf745e75f9088748d737.txt">text.txt</a> (20 Bytes)</p>'
     end
 
     context "when CDN is enabled" do
@@ -320,17 +352,20 @@ describe CookedPostProcessor do
       it "does use schemaless CDN url for http uploads" do
         Rails.configuration.action_controller.stubs(:asset_host).returns("http://my.cdn.com")
         cpp.optimize_urls
-        expect(cpp.html).to match_html '<a href="//my.cdn.com/uploads/default/2/2345678901234567.jpg">Link</a>
-       <img src="//my.cdn.com/uploads/default/1/1234567890123456.jpg"><a href="http://www.google.com">Google</a>
-       <img src="http://foo.bar/image.png">'
+        expect(cpp.html).to match_html '<p><a href="//my.cdn.com/uploads/default/2/2345678901234567.jpg">Link</a><br><img src="//my.cdn.com/uploads/default/1/1234567890123456.jpg"><br><a href="http://www.google.com" rel="nofollow">Google</a><br><img src="http://foo.bar/image.png"><br><a class="attachment" href="//my.cdn.com/uploads/default/original/1X/af2c2618032c679333bebf745e75f9088748d737.txt">text.txt</a> (20 Bytes)</p>'
       end
 
       it "does not use schemaless CDN url for https uploads" do
         Rails.configuration.action_controller.stubs(:asset_host).returns("https://my.cdn.com")
         cpp.optimize_urls
-        expect(cpp.html).to match_html '<a href="https://my.cdn.com/uploads/default/2/2345678901234567.jpg">Link</a>
-       <img src="https://my.cdn.com/uploads/default/1/1234567890123456.jpg"><a href="http://www.google.com">Google</a>
-       <img src="http://foo.bar/image.png">'
+        expect(cpp.html).to match_html '<p><a href="https://my.cdn.com/uploads/default/2/2345678901234567.jpg">Link</a><br><img src="https://my.cdn.com/uploads/default/1/1234567890123456.jpg"><br><a href="http://www.google.com" rel="nofollow">Google</a><br><img src="http://foo.bar/image.png"><br><a class="attachment" href="https://my.cdn.com/uploads/default/original/1X/af2c2618032c679333bebf745e75f9088748d737.txt">text.txt</a> (20 Bytes)</p>'
+      end
+
+      it "does not use CDN when login is required" do
+        SiteSetting.login_required = true
+        Rails.configuration.action_controller.stubs(:asset_host).returns("http://my.cdn.com")
+        cpp.optimize_urls
+        expect(cpp.html).to match_html '<p><a href="//my.cdn.com/uploads/default/2/2345678901234567.jpg">Link</a><br><img src="//my.cdn.com/uploads/default/1/1234567890123456.jpg"><br><a href="http://www.google.com" rel="nofollow">Google</a><br><img src="http://foo.bar/image.png"><br><a class="attachment" href="//test.localhost/uploads/default/original/1X/af2c2618032c679333bebf745e75f9088748d737.txt">text.txt</a> (20 Bytes)</p>'
       end
 
     end
@@ -374,10 +409,10 @@ describe CookedPostProcessor do
 
           before { post.id = 42 }
 
-          it "ensures only one job is scheduled right after the ninja_edit_window" do
+          it "ensures only one job is scheduled right after the editing_grace_period" do
             Jobs.expects(:cancel_scheduled_job).with(:pull_hotlinked_images, post_id: post.id).once
 
-            delay = SiteSetting.ninja_edit_window + 1
+            delay = SiteSetting.editing_grace_period + 1
             Jobs.expects(:enqueue_in).with(delay.seconds, :pull_hotlinked_images, post_id: post.id, bypass_bump: false).once
 
             cpp.pull_hotlinked_images

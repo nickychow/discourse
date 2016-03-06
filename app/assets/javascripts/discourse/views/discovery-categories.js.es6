@@ -1,11 +1,16 @@
 import UrlRefresh from 'discourse/mixins/url-refresh';
+import { on } from 'ember-addons/ember-computed-decorators';
 
-export default Discourse.View.extend(UrlRefresh, {
-  _addBodyClass: function() {
-    $('body').addClass('categories-list');
-  }.on('didInsertElement'),
+const CATEGORIES_LIST_BODY_CLASS = "categories-list";
 
-  _removeBodyClass: function() {
-    $('body').removeClass('categories-list');
-  }.on('willDestroyElement')
+export default Ember.View.extend(UrlRefresh, {
+  @on("didInsertElement")
+  addBodyClass() {
+    $('body').addClass(CATEGORIES_LIST_BODY_CLASS);
+  },
+
+  @on("willDestroyElement")
+  removeBodyClass() {
+    $('body').removeClass(CATEGORIES_LIST_BODY_CLASS);
+  },
 });

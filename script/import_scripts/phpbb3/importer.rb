@@ -56,6 +56,8 @@ module ImportScripts::PhpBB3
         rows = @database.fetch_users(offset)
         break if rows.size < 1
 
+        next if all_records_exist?(:users, importer.map_users_to_import_ids(rows))
+
         create_users(rows, total: total_count, offset: offset) do |row|
           importer.map_user(row)
         end
@@ -70,6 +72,8 @@ module ImportScripts::PhpBB3
       batches do |offset|
         rows = @database.fetch_anonymous_users(offset)
         break if rows.size < 1
+
+        next if all_records_exist?(:users, importer.map_anonymous_users_to_import_ids(rows))
 
         create_users(rows, total: total_count, offset: offset) do |row|
           importer.map_anonymous_user(row)
@@ -96,11 +100,36 @@ module ImportScripts::PhpBB3
         rows = @database.fetch_posts(offset)
         break if rows.size < 1
 
+        next if all_records_exist?(:posts, importer.map_to_import_ids(rows))
+
         create_posts(rows, total: total_count, offset: offset) do |row|
           importer.map_post(row)
         end
       end
     end
+
+    # uncomment below lines to create permalink for categories
+    # def create_category(opts, import_id)
+    #   new_category = super
+    #   url = "viewforum.php?f=#{import_id}"
+    #   if !Permalink.find_by(url: url)
+    #     Permalink.create(url: url, category_id: new_category.id)
+    #   end
+    #   new_category
+    # end
+
+    # uncomment below lines to create permalink for topics
+    # def create_post(opts, import_id)
+    #   post = super
+    #   if post && (topic = post.topic) && (category = topic.category)
+    #     url = "viewtopic.php?f=#{category.custom_fields["import_id"]}&t=#{opts[:import_topic_id]}"
+
+    #     if !Permalink.find_by(url: url)
+    #       Permalink.create(url: url, topic_id: topic.id)
+    #     end
+    #   end
+    #   post
+    # end
 
     def import_private_messages
       if @settings.fix_private_messages
@@ -115,6 +144,8 @@ module ImportScripts::PhpBB3
       batches do |offset|
         rows = @database.fetch_messages(@settings.fix_private_messages, offset)
         break if rows.size < 1
+
+        next if all_records_exist?(:posts, importer.map_to_import_ids(rows))
 
         create_posts(rows, total: total_count, offset: offset) do |row|
           importer.map_message(row)

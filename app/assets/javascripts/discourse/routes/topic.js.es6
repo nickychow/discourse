@@ -1,3 +1,5 @@
+import DiscourseURL from 'discourse/lib/url';
+
 let isTransitioning = false,
     scheduledReplace = null,
     lastScrollPos = null;
@@ -38,13 +40,9 @@ const TopicRoute = Discourse.Route.extend({
 
   actions: {
 
-    showTopicAdminMenu() {
-      this.controllerFor("topic-admin-menu").send("show");
-    },
-
     showFlags(model) {
       showModal('flag', { model });
-      this.controllerFor('flag').setProperties({ selected: null });
+      this.controllerFor('flag').setProperties({ selected: null, flagTopic: false });
     },
 
     showFlagTopic(model) {
@@ -53,8 +51,12 @@ const TopicRoute = Discourse.Route.extend({
     },
 
     showAutoClose() {
-      showModal('edit-topic-auto-close', { model: this.modelFor('topic'), title: 'topic.auto_close_title' });
+      showModal('edit-topic-auto-close', { model: this.modelFor('topic') });
       this.controllerFor('modal').set('modalClass', 'edit-auto-close-modal');
+    },
+
+    showChangeTimestamp() {
+      showModal('change-timestamp', { model: this.modelFor('topic'), title: 'topic.change_timestamp.title' });
     },
 
     showFeatureTopic() {
@@ -94,7 +96,7 @@ const TopicRoute = Discourse.Route.extend({
     // Use replaceState to update the URL once it changes
     postChangedRoute(currentPost) {
       // do nothing if we are transitioning to another route
-      if (isTransitioning || Discourse.TopicRoute.disableReplaceState) { return; }
+      if (isTransitioning || TopicRoute.disableReplaceState) { return; }
 
       const topic = this.modelFor('topic');
       if (topic && currentPost) {
@@ -126,7 +128,7 @@ const TopicRoute = Discourse.Route.extend({
   _replaceUnlessScrolling(url) {
     const currentPos = parseInt($(document).scrollTop(), 10);
     if (currentPos === lastScrollPos) {
-      Discourse.URL.replaceState(url);
+      DiscourseURL.replaceState(url);
       return;
     }
     lastScrollPos = currentPos;
@@ -168,14 +170,12 @@ const TopicRoute = Discourse.Route.extend({
 
     const topic = this.modelFor('topic');
     this.session.set('lastTopicIdViewed', parseInt(topic.get('id'), 10));
-    this.controllerFor('search').set('searchContext', topic.get('searchContext'));
   },
 
   deactivate() {
     this._super();
 
-    // Clear the search context
-    this.controllerFor('search').set('searchContext', null);
+    this.searchService.set('searchContext', null);
     this.controllerFor('user-card').set('visible', false);
 
     const topicController = this.controllerFor('topic'),
@@ -185,7 +185,7 @@ const TopicRoute = Discourse.Route.extend({
     topicController.set('multiSelect', false);
     topicController.unsubscribe();
     this.controllerFor('composer').set('topic', null);
-    Discourse.ScreenTrack.current().stop();
+    this.screenTrack.stop();
 
     const headerController = this.controllerFor('header');
     if (headerController) {
@@ -198,35 +198,25 @@ const TopicRoute = Discourse.Route.extend({
     // In case we navigate from one topic directly to another
     isTransitioning = false;
 
-    if (Discourse.Mobile.mobileView) {
-      // close the dropdowns on mobile
-      $('.d-dropdown').hide();
-      $('header ul.icons li').removeClass('active');
-      $('[data-toggle="dropdown"]').parent().removeClass('open');
-    }
-
     controller.setProperties({
       model,
       editingTopic: false,
       firstPostExpanded: false
     });
 
-    Discourse.TopicRoute.trigger('setupTopicController', this);
+    TopicRoute.trigger('setupTopicController', this);
 
-    this.controllerFor('header').setProperties({
-      topic: model,
-      showExtraInfo: false
-    });
-
-    this.controllerFor('topic-admin-menu').set('model', model);
+    this.controllerFor('header').setProperties({ topic: model, showExtraInfo: false });
+    this.searchService.set('searchContext', model.get('searchContext'));
 
     this.controllerFor('composer').set('topic', model);
-    Discourse.TopicTrackingState.current().trackIncoming('all');
+    this.topicTrackingState.trackIncoming('all');
     controller.subscribe();
 
     this.controllerFor('topic-progress').set('model', model);
+
     // We reset screen tracking every time a topic is entered
-    Discourse.ScreenTrack.current().start(model.get('id'), controller);
+    this.screenTrack.start(model.get('id'), controller);
   }
 
 });

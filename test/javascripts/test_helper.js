@@ -1,18 +1,13 @@
-/*jshint maxlen:250 */
 /*global document, sinon, QUnit, Logster */
 
 //= require env
-
 //= require ../../app/assets/javascripts/preload_store
-
-// probe framework first
-//= require ../../app/assets/javascripts/discourse/lib/probes
-
-// Externals we need to load first
+//= require probes
 //= require jquery.debug
 //= require jquery.ui.widget
 //= require handlebars
-//= require ember.custom.debug
+//= require ember.debug
+//= require ember-template-compiler
 //= require message-bus
 //= require ember-qunit
 //= require fake_xml_http_request
@@ -21,9 +16,6 @@
 
 //= require ../../app/assets/javascripts/locales/i18n
 //= require ../../app/assets/javascripts/locales/en
-
-// Pagedown customizations
-//= require ../../app/assets/javascripts/pagedown_custom.js
 
 //= require vendor
 
@@ -36,7 +28,6 @@
 
 //= require sinon-1.7.1
 //= require sinon-qunit-1.0.0
-//= require jshint
 
 //= require helpers/qunit-helpers
 //= require helpers/assertions
@@ -45,9 +36,12 @@
 //= require_tree ./fixtures
 //= require_tree ./lib
 //= require_tree .
+//= require plugin_tests
 //= require_self
 //
 //= require ../../public/javascripts/jquery.magnific-popup-min.js
+
+window.inTestEnv = true;
 
 window.assetPath = function(url) {
   if (url.indexOf('defer') === 0) {
@@ -77,8 +71,10 @@ if (window.Logster) {
 
 var origDebounce = Ember.run.debounce,
     createPretendServer = require('helpers/create-pretender', null, null, false).default,
-    fixtures = require('fixtures/site_fixtures', null, null, false).default,
+    fixtures = require('fixtures/site-fixtures', null, null, false).default,
     flushMap = require('discourse/models/store', null, null, false).flushMap,
+    ScrollingDOMMethods = require('discourse/mixins/scrolling', null, null, false).ScrollingDOMMethods,
+    _DiscourseURL = require('discourse/lib/url', null, null, false).default,
     server;
 
 function dup(obj) {
@@ -90,30 +86,32 @@ QUnit.testStart(function(ctx) {
 
   // Allow our tests to change site settings and have them reset before the next test
   Discourse.SiteSettings = dup(Discourse.SiteSettingsOriginal);
-  Discourse.BaseUri = "/";
+  Discourse.BaseUri = "";
   Discourse.BaseUrl = "localhost";
+  Discourse.Session.resetCurrent();
   Discourse.User.resetCurrent();
   Discourse.Site.resetCurrent(Discourse.Site.create(dup(fixtures['site.json'].site)));
 
-  Discourse.URL.redirectedTo = null;
-  Discourse.URL.redirectTo = function(url) {
-    Discourse.URL.redirectedTo = url;
+  _DiscourseURL.redirectedTo = null;
+  _DiscourseURL.redirectTo = function(url) {
+    _DiscourseURL.redirectedTo = url;
   };
 
   PreloadStore.reset();
 
   window.sandbox = sinon.sandbox.create();
-  window.sandbox.stub(Discourse.ScrollingDOMMethods, "bindOnScroll");
-  window.sandbox.stub(Discourse.ScrollingDOMMethods, "unbindOnScroll");
+  window.sandbox.stub(ScrollingDOMMethods, "screenNotFull");
+  window.sandbox.stub(ScrollingDOMMethods, "bindOnScroll");
+  window.sandbox.stub(ScrollingDOMMethods, "unbindOnScroll");
+
+  // Unless we ever need to test this, let's leave it off.
+  $.fn.autocomplete = Ember.K;
 
   // Don't debounce in test unless we're testing debouncing
   if (ctx.module.indexOf('debounce') === -1) {
     Ember.run.debounce = Ember.run;
   }
 });
-
-// Don't cloak in testing
-Ember.CloakedCollectionView = Ember.CollectionView;
 
 QUnit.testDone(function() {
   Ember.run.debounce = origDebounce;

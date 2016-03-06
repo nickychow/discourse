@@ -1,5 +1,7 @@
+import DiscourseURL from 'discourse/lib/url';
 import { buildCategoryPanel } from 'discourse/components/edit-category-panel';
 import { categoryBadgeHTML } from 'discourse/helpers/category-link';
+import Category from 'discourse/models/category';
 
 export default buildCategoryPanel('general', {
   foregroundColors: ['FFFFFF', '000000'],
@@ -30,7 +32,7 @@ export default buildCategoryPanel('general', {
 
   categoryBadgePreview: function() {
     const category = this.get('category');
-    const c = Discourse.Category.create({
+    const c = Category.create({
       name: category.get('categoryName'),
       color: category.get('color'),
       text_color: category.get('text_color'),
@@ -44,7 +46,7 @@ export default buildCategoryPanel('general', {
   // We can change the parent if there are no children
   subCategories: function() {
     if (Ember.isEmpty(this.get('category.id'))) { return null; }
-    return Discourse.Category.list().filterBy('parent_category_id', this.get('category.id'));
+    return Category.list().filterBy('parent_category_id', this.get('category.id'));
   }.property('category.id'),
 
   showDescription: function() {
@@ -53,7 +55,7 @@ export default buildCategoryPanel('general', {
 
   actions: {
     showCategoryTopic() {
-      Discourse.URL.routeTo(this.get('category.topic_url'));
+      DiscourseURL.routeTo(this.get('category.topic_url'));
       return false;
     }
   }

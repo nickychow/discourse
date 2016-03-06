@@ -63,8 +63,6 @@ Discourse.SiteSettingsOriginal = {
   "default_code_lang":"lang-auto",
   "autohighlight_all_code":false,
   "email_in":false,
-  "max_image_size_kb":3072,
-  "max_attachment_size_kb":1024,
   "authorized_extensions":".jpg|.jpeg|.png|.gif|.svg|.txt|.ico|.yml",
   "max_image_width":690,
   "max_image_height":500,
@@ -76,12 +74,13 @@ Discourse.SiteSettingsOriginal = {
   "polling_interval":3000,
   "anon_polling_interval":30000,
   "flush_timings_secs":5,
+  "enable_user_directory":true,
   "tos_url":"",
   "privacy_policy_url":"",
   "tos_accept_required":false,
   "faq_url":"",
   "allow_restore":false,
-  "maximum_backups":7,
+  "maximum_backups":5,
   "version_checks":true,
   "suppress_uncategorized_badge":true,
   "min_search_term_length":3,
@@ -92,6 +91,7 @@ Discourse.SiteSettingsOriginal = {
   "show_create_topics_notice":true,
   "available_locales":"cs|da|de|en|es|fr|he|id|it|ja|ko|nb_NO|nl|pl_PL|pt|pt_BR|ru|sv|uk|zh_CN|zh_TW",
   "highlighted_languages":"apache|bash|cs|cpp|css|coffeescript|diff|xml|http|ini|json|java|javascript|makefile|markdown|nginx|objectivec|ruby|perl|php|python|sql|handlebars",
-  "enable_emoji":true
+  "enable_emoji":true,
+  "emoji_set":"emoji_one"
 };
 Discourse.SiteSettings = jQuery.extend(true, {}, Discourse.SiteSettingsOriginal);

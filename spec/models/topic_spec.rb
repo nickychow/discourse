@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-require 'spec_helper'
+require 'rails_helper'
 require_dependency 'post_destroyer'
 
 describe Topic do
@@ -10,6 +10,37 @@ describe Topic do
   it { is_expected.to validate_presence_of :title }
 
   it { is_expected.to rate_limit }
+
+  context '#visible_post_types' do
+    let(:types) { Post.types }
+
+    it "returns the appropriate types for anonymous users" do
+      post_types = Topic.visible_post_types
+
+      expect(post_types).to include(types[:regular])
+      expect(post_types).to include(types[:moderator_action])
+      expect(post_types).to include(types[:small_action])
+      expect(post_types).to_not include(types[:whisper])
+    end
+
+    it "returns the appropriate types for regular users" do
+      post_types = Topic.visible_post_types(Fabricate.build(:user))
+
+      expect(post_types).to include(types[:regular])
+      expect(post_types).to include(types[:moderator_action])
+      expect(post_types).to include(types[:small_action])
+      expect(post_types).to_not include(types[:whisper])
+    end
+
+    it "returns the appropriate types for staff users" do
+      post_types = Topic.visible_post_types(Fabricate.build(:moderator))
+
+      expect(post_types).to include(types[:regular])
+      expect(post_types).to include(types[:moderator_action])
+      expect(post_types).to include(types[:small_action])
+      expect(post_types).to include(types[:whisper])
+    end
+  end
 
   context 'slug' do
     let(:title) { "hello world topic" }
@@ -183,7 +214,7 @@ describe Topic do
 
     context 'title_fancy_entities disabled' do
       before do
-        SiteSetting.stubs(:title_fancy_entities).returns(false)
+        SiteSetting.title_fancy_entities = false
       end
 
       it "doesn't add entities to the title" do
@@ -193,11 +224,26 @@ describe Topic do
 
     context 'title_fancy_entities enabled' do
       before do
-        SiteSetting.stubs(:title_fancy_entities).returns(true)
+        SiteSetting.title_fancy_entities = true
       end
 
-      it "converts the title to have fancy entities" do
+      it "converts the title to have fancy entities and updates" do
         expect(topic.fancy_title).to eq("&ldquo;this topic&rdquo; &ndash; has &ldquo;fancy stuff&rdquo;")
+        topic.title = "this is my test hello world... yay"
+        topic.user.save!
+        topic.save!
+        topic.reload
+        expect(topic.fancy_title).to eq("This is my test hello world&hellip; yay")
+
+        topic.title = "I made a change to the title"
+        topic.save!
+
+        topic.reload
+        expect(topic.fancy_title).to eq("I made a change to the title")
+
+        # another edge case
+        topic.title = "this is another edge case"
+        expect(topic.fancy_title).to eq("this is another edge case")
       end
     end
   end
@@ -332,13 +378,18 @@ describe Topic do
             expect(topic.invite(topic.user, walter.username)).to eq(true)
             expect(topic.allowed_users.include?(walter)).to eq(true)
 
-            expect(topic.remove_allowed_user(walter.username)).to eq(true)
+            expect(topic.remove_allowed_user(topic.user, walter.username)).to eq(true)
             topic.reload
             expect(topic.allowed_users.include?(walter)).to eq(false)
           end
 
           it 'creates a notification' do
             expect { topic.invite(topic.user, walter.username) }.to change(Notification, :count)
+          end
+
+          it 'creates a small action post' do
+            expect { topic.invite(topic.user, walter.username) }.to change(Post, :count)
+            expect { topic.remove_allowed_user(topic.user, walter.username) }.to change(Post, :count)
           end
         end
 
@@ -418,7 +469,7 @@ describe Topic do
 
       it "doesn't bump the topic on an edit to the last post that doesn't result in a new version" do
         expect {
-          SiteSetting.expects(:ninja_edit_window).returns(5.minutes)
+          SiteSetting.expects(:editing_grace_period).returns(5.minutes)
           @last_post.revise(@last_post.user, { raw: 'updated contents' }, revised_at: @last_post.created_at + 10.seconds)
           @topic.reload
         }.not_to change(@topic, :bumped_at)
@@ -1238,7 +1289,7 @@ describe Topic do
     it "doesn't return topics from muted categories" do
       user = Fabricate(:user)
       category = Fabricate(:category)
-      topic = Fabricate(:topic, category: category)
+      Fabricate(:topic, category: category)
 
       CategoryUser.set_notification_level_for_category(user, CategoryUser.notification_levels[:muted], category.id)
 
@@ -1247,7 +1298,7 @@ describe Topic do
 
     it "doesn't return topics from TL0 users" do
       new_user = Fabricate(:user, trust_level: 0)
-      topic = Fabricate(:topic, user_id: new_user.id)
+      Fabricate(:topic, user_id: new_user.id)
 
       expect(Topic.for_digest(user, 1.year.ago, top_order: true)).to be_blank
     end
@@ -1266,6 +1317,47 @@ describe Topic do
 
       expect(Topic.for_digest(Fabricate(:user), 1.year.ago).count).to eq(0)
       expect(Topic.for_digest(Fabricate(:admin), 1.year.ago).count).to eq(1)
+    end
+  end
+
+  describe 'all_allowed_users' do
+    let(:group) { Fabricate(:group) }
+    let(:topic) { Fabricate(:topic, allowed_groups: [group]) }
+    let!(:allowed_user) { Fabricate(:user) }
+    let!(:allowed_group_user) { Fabricate(:user) }
+    let!(:moderator) { Fabricate(:user, moderator: true) }
+    let!(:rando) { Fabricate(:user) }
+
+    before do
+      topic.allowed_users << allowed_user
+      group.users << allowed_group_user
+    end
+
+    it 'includes allowed_users' do
+      expect(topic.all_allowed_users).to include allowed_user
+    end
+
+    it 'includes allowed_group_users' do
+      expect(topic.all_allowed_users).to include allowed_group_user
+    end
+
+    it 'includes moderators if flagged and a pm' do
+      topic.stubs(:has_flags?).returns(true)
+      topic.stubs(:private_message?).returns(true)
+      expect(topic.all_allowed_users).to include moderator
+    end
+
+    it 'does not include moderators if pm without flags' do
+      topic.stubs(:private_message?).returns(true)
+      expect(topic.all_allowed_users).not_to include moderator
+    end
+
+    it 'does not include moderators for regular topic' do
+      expect(topic.all_allowed_users).not_to include moderator
+    end
+
+    it 'does not include randos' do
+      expect(topic.all_allowed_users).not_to include rando
     end
   end
 
@@ -1397,32 +1489,34 @@ describe Topic do
   end
 
   describe "expandable_first_post?" do
+
     let(:topic) { Fabricate.build(:topic) }
 
-    before do
-      SiteSetting.embeddable_hosts = "http://eviltrout.com"
-      SiteSetting.embed_truncate = true
-      topic.stubs(:has_topic_embed?).returns(true)
-    end
-
-    it "is true with the correct settings and topic_embed" do
-      expect(topic.expandable_first_post?).to eq(true)
-    end
-
     it "is false if embeddable_host is blank" do
-      SiteSetting.embeddable_hosts = nil
       expect(topic.expandable_first_post?).to eq(false)
     end
 
-    it "is false if embed_truncate? is false" do
-      SiteSetting.embed_truncate = false
-      expect(topic.expandable_first_post?).to eq(false)
+    describe 'with an emeddable host' do
+      before do
+        Fabricate(:embeddable_host)
+        SiteSetting.embed_truncate = true
+        topic.stubs(:has_topic_embed?).returns(true)
+      end
+
+      it "is true with the correct settings and topic_embed" do
+        expect(topic.expandable_first_post?).to eq(true)
+      end
+      it "is false if embed_truncate? is false" do
+        SiteSetting.embed_truncate = false
+        expect(topic.expandable_first_post?).to eq(false)
+      end
+
+      it "is false if has_topic_embed? is false" do
+        topic.stubs(:has_topic_embed?).returns(false)
+        expect(topic.expandable_first_post?).to eq(false)
+      end
     end
 
-    it "is false if has_topic_embed? is false" do
-      topic.stubs(:has_topic_embed?).returns(false)
-      expect(topic.expandable_first_post?).to eq(false)
-    end
   end
 
   it "has custom fields" do
@@ -1449,7 +1543,7 @@ describe Topic do
 
   context 'invite by group manager' do
     let(:group_manager) { Fabricate(:user) }
-    let(:group) { Fabricate(:group).tap { |g| g.add(group_manager); g.appoint_manager(group_manager) } }
+    let(:group) { Fabricate(:group).tap { |g| g.add_owner(group_manager) } }
     let(:private_category)  { Fabricate(:private_category, group: group) }
     let(:group_private_topic) { Fabricate(:topic, category: private_category, user: group_manager) }
 
@@ -1474,9 +1568,20 @@ describe Topic do
         expect(Guardian.new(walter).can_see?(group_private_topic)).to be_truthy
       end
     end
+  end
 
-    context 'to a previously-invited user' do
+  it "Correctly sets #message_archived?" do
+    topic = Fabricate(:private_message_topic)
+    user = topic.user
 
-    end
+    expect(topic.message_archived?(user)).to eq(false)
+
+    group = Fabricate(:group)
+    group.add(user)
+
+    TopicAllowedGroup.create!(topic_id: topic.id, group_id: group.id)
+    GroupArchivedMessage.create!(topic_id: topic.id, group_id: group.id)
+
+    expect(topic.message_archived?(user)).to eq(true)
   end
 end

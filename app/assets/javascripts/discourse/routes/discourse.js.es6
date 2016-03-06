@@ -1,3 +1,5 @@
+import Composer from 'discourse/models/composer';
+
 const DiscourseRoute = Ember.Route.extend({
 
   // Set to true to refresh a model without a transition if a query param
@@ -13,7 +15,7 @@ const DiscourseRoute = Ember.Route.extend({
             params = this.controller.getProperties(Object.keys(this.queryParams));
 
       model.set('loading', true);
-      this.model(params).then(model => this.setupController(controller, model));
+      this.model(params).then(m => this.setupController(controller, m));
     }
   },
 
@@ -58,7 +60,7 @@ const DiscourseRoute = Ember.Route.extend({
       const composer = this.controllerFor('composer');
       if (!composer.get('model.viewOpen')) {
         composer.open({
-          action: Discourse.Composer.CREATE_TOPIC,
+          action: Composer.CREATE_TOPIC,
           draft: model.draft,
           draftKey: model.draft_key,
           draftSequence: model.draft_sequence
@@ -77,7 +79,6 @@ export function cleanDOM() {
   $('.profiler-results .profiler-result').remove();
 
   // Close some elements that may be open
-  $('.d-dropdown').hide();
   $('header ul.icons li').removeClass('active');
   $('[data-toggle="dropdown"]').parent().removeClass('open');
   // close the lightbox
@@ -88,7 +89,7 @@ export function cleanDOM() {
 
   // Remove any link focus
   // NOTE: the '.not("body")' is here to prevent a bug in IE10 on Win7
-  // cf. https://stackoverflow.com/questions/5657371/ie9-window-loses-focus-due-to-jquery-mobile
+  // cf. https://stackoverflow.com/questions/5657371
   $(document.activeElement).not("body").not(".no-blur").blur();
 
   Discourse.set('notifyCount',0);

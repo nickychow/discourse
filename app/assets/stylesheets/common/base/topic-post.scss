@@ -1,3 +1,19 @@
+.placeholder-avatar {
+  display: inline-block;
+  background-color: dark-light-diff($primary, $secondary, 90%, -75%);
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+}
+
+.placeholder-text {
+  display: inline-block;
+  background-color: dark-light-diff($primary, $secondary, 90%, -75%);
+  width: 100%;
+  height: 1.5em;
+  margin-bottom: 0.6em;
+}
+
 .names {
  float: left;
  .username {
@@ -12,29 +28,31 @@
    overflow: hidden;
    text-overflow: ellipsis;
    a {
-     color: scale-color($primary, $lightness: 30%);
+     color: dark-light-choose(scale-color($primary, $lightness: 30%), scale-color($secondary, $lightness: 70%));
    }
  }
  .fa {
    font-size: 11px;
    margin-left: 3px;
-   color: scale-color($primary, $lightness: 40%);
+   color: dark-light-choose(scale-color($primary, $lightness: 40%), scale-color($secondary, $lightness: 60%));
  }
   .new_user a, .user-title, .user-title a {
-    color: scale-color($primary, $lightness: 50%);
+    color: dark-light-choose(scale-color($primary, $lightness: 50%), scale-color($secondary, $lightness: 50%));
  }
 }
 
 // global styles for the cooked HTML content in posts (and preview)
-.cooked, .wmd-preview {
+.cooked, .d-editor-preview {
   word-wrap: break-word;
   h1, h2, h3, h4, h5, h6 { margin: 30px 0 10px; }
   h1 { line-height: 1em; } /* normalize.css sets h1 font size but not line height */
   a { word-wrap: break-word; }
+  ins { background-color: dark-light-choose(scale-color($success, $lightness: 90%), scale-color($success, $lightness: -60%)); }
+  del { background-color: dark-light-choose(scale-color($danger, $lightness: 90%), scale-color($danger, $lightness: -60%)); }
 }
 
 
-.cooked, .wmd-preview {
+.cooked, .d-editor-preview {
   video {
     max-width: 100%;
   }
@@ -50,9 +68,9 @@ aside.quote {
   .badge-wrapper { margin-left: 5px; }
 
   .title {
-    border-left: 5px solid dark-light-diff($primary, $secondary, 90%, -65%);
-    background-color: dark-light-diff($primary, $secondary, 97%, -45%);
-    color: scale-color($primary, $lightness: 30%);
+    @include post-aside;
+
+    color: dark-light-choose(scale-color($primary, $lightness: 30%), scale-color($secondary, $lightness: 70%));
     // IE will screw up the blockquote underneath if bottom padding is 0px
     padding: 12px 12px 1px 12px;
     // blockquote is underneath this and has top margin
@@ -68,7 +86,7 @@ aside.quote {
 }
 
 .quote-controls, .quote-controls .back:before, .quote-controls .quote-other-topic:before {
-  color: scale-color($primary, $lightness: 70%);
+  color: dark-light-choose(scale-color($primary, $lightness: 70%), scale-color($secondary, $lightness: 30%));
 }
 
 .cooked .highlight {
@@ -113,8 +131,8 @@ aside.quote {
 .quote-button {
   display: none;
   position: absolute;
-  background-color: scale-color($primary, $lightness: 50%);
-  color: $secondary;
+  background-color: dark-light-diff($primary, $secondary, 50%, -50%);
+  color: dark-light-choose($secondary, $primary);
   padding: 10px;
   z-index: 401;
 
@@ -124,13 +142,23 @@ aside.quote {
   }
 
   &:hover {
-    background-color: scale-color($primary, $lightness: 40%);
+    background-color: dark-light-diff($primary, $secondary, 40%, -40%);
     cursor: pointer;
   }
 }
 
-.wiki .topic-body {
-  background-color: dark-light-diff($wiki, $secondary, 95%, -50%);
+.topic-avatar .poster-avatar-extra {
+  display: none;
+}
+
+.topic-body {
+  // this is necessary for ANYTHING that extends past the right edge of
+  // the post body, such as an image in a deeply nested list, image in
+  // a deeply nested blockquote, and so on.. you get the idea.
+  overflow: hidden;
+  &.highlighted {
+    background-color: dark-light-diff($tertiary, $secondary, 85%, -65%);
+  }
 }
 
 // this ensures consistent top margin on topic posts even if the first line of a post
@@ -140,7 +168,7 @@ aside.quote {
 }
 
 .post-info {
-  &.wiki, &.via-email {
+  &.wiki, &.via-email, &.whisper {
     margin-right: 5px;
     i.fa {
       font-size: 1em;
@@ -148,10 +176,10 @@ aside.quote {
   }
   &.wiki {
     cursor: pointer;
-    color: $wiki;
+    color: #408040;
   }
   &.via-email {
-    color: scale-color($primary, $lightness: 70%);
+    color: dark-light-choose(scale-color($primary, $lightness: 70%), scale-color($secondary, $lightness: 30%));
   }
   &.raw-email {
     cursor: pointer;
@@ -164,7 +192,7 @@ pre {
     display: block;
     padding: 5px 10px;
     color: $primary;
-    background: dark-light-diff($primary, $secondary, 97%, -45%);
+    background: blend-primary-secondary(5%);
     max-height: 500px;
   }
 }
@@ -201,7 +229,7 @@ blockquote > *:last-child {
 .gap {
   background-color: dark-light-diff($primary, $secondary, 90%, -60%);
   padding: 5px 0;
-  color: lighten($primary, 60%);
+  color: dark-light-choose(scale-color($primary, $lightness: 60%), scale-color($secondary, $lightness: 40%));
   cursor: pointer;
   text-align: center;
 
@@ -269,7 +297,7 @@ table.md-table {
       font-size: 35px;
       width: 45px;
       text-align: center;
-      color: lighten($primary, 75%);
+      color: dark-light-choose(scale-color($primary, $lightness: 75%), scale-color($secondary, $lightness: 25%));
     }
   }
 
@@ -279,7 +307,7 @@ table.md-table {
     text-transform: uppercase;
     font-weight: bold;
     font-size: 0.9em;
-    color: lighten($primary, 50%);
+    color: dark-light-choose(scale-color($primary, $lightness: 75%), scale-color($secondary, $lightness: 25%));
 
     .custom-message {
       text-transform: none;
@@ -309,4 +337,16 @@ table.md-table {
   }
 
   clear: both;
+}
+
+.whisper {
+  .post-info.whisper {
+    margin-left: 0.5em;
+  }
+  .topic-body {
+    .cooked {
+      font-style: italic;
+      color: dark-light-diff($primary, $secondary, 55%, -40%);
+    }
+  }
 }

@@ -139,23 +139,20 @@ class OptimizedImage < ActiveRecord::Base
   end
 
   def self.resize(from, to, width, height, opts={})
-    optimize("resize", from, to, width, height, opts)
+    optimize("resize", from, to, "#{width}x#{height}", opts)
   end
 
-  def self.downsize(from, to, max_width, max_height, opts={})
-    optimize("downsize", from, to, max_width, max_height, opts)
+  def self.downsize(from, to, dimensions, opts={})
+    optimize("downsize", from, to, dimensions, opts)
   end
 
-  def self.optimize(operation, from, to, width, height, opts={})
-    dim = dimensions(width, height)
+  def self.optimize(operation, from, to, dimensions, opts={})
     method_name = "#{operation}_instructions"
-    method_name += "_animated" if !!opts[:allow_animation] && from =~ /\.GIF$/i
-    instructions = self.send(method_name.to_sym, from, to, dim, opts)
+    if !!opts[:allow_animation] && (from =~ /\.GIF$/i || opts[:filename] =~ /\.GIF$/i)
+      method_name += "_animated"
+    end
+    instructions = self.send(method_name.to_sym, from, to, dimensions, opts)
     convert_with(instructions, to)
-  end
-
-  def self.dimensions(width, height)
-    "#{width}x#{height}"
   end
 
   def self.convert_with(instructions, to)
@@ -239,7 +236,7 @@ end
 #  width     :integer          not null
 #  height    :integer          not null
 #  upload_id :integer          not null
-#  url       :string(255)      not null
+#  url       :string           not null
 #
 # Indexes
 #

@@ -37,7 +37,7 @@ class Admin::UsersController < Admin::AdminController
   end
 
   def show
-    @user = User.find_by(username_lower: params[:id])
+    @user = User.find_by(id: params[:id])
     raise Discourse::NotFound unless @user
     render_serialized(@user, AdminDetailedUserSerializer, root: false)
   end
@@ -53,6 +53,7 @@ class Admin::UsersController < Admin::AdminController
     @user.suspended_till = params[:duration].to_i.days.from_now
     @user.suspended_at = DateTime.now
     @user.save!
+    @user.revoke_api_key
     StaffActionLogger.new(current_user).log_user_suspend(@user, params[:reason])
     MessageBus.publish "/logout", @user.id, user_ids: [@user.id]
     render nothing: true
@@ -86,6 +87,7 @@ class Admin::UsersController < Admin::AdminController
   def revoke_admin
     guardian.ensure_can_revoke_admin!(@user)
     @user.revoke_admin!
+    StaffActionLogger.new(current_user).log_revoke_admin(@user)
     render nothing: true
   end
 
@@ -102,25 +104,31 @@ class Admin::UsersController < Admin::AdminController
   def grant_admin
     guardian.ensure_can_grant_admin!(@user)
     @user.grant_admin!
+    StaffActionLogger.new(current_user).log_grant_admin(@user)
     render_serialized(@user, AdminUserSerializer)
   end
 
   def revoke_moderation
     guardian.ensure_can_revoke_moderation!(@user)
     @user.revoke_moderation!
+    StaffActionLogger.new(current_user).log_revoke_moderation(@user)
     render nothing: true
   end
 
   def grant_moderation
     guardian.ensure_can_grant_moderation!(@user)
     @user.grant_moderation!
+    StaffActionLogger.new(current_user).log_grant_moderation(@user)
     render_serialized(@user, AdminUserSerializer)
   end
 
   def add_group
     group = Group.find(params[:group_id].to_i)
     return render_json_error group unless group && !group.automatic
-    group.users << @user
+
+    # We don't care about duplicate group assignment
+    group.users << @user rescue ActiveRecord::RecordNotUnique
+
     render nothing: true
   end
 
@@ -212,7 +220,7 @@ class Admin::UsersController < Admin::AdminController
 
   def block
     guardian.ensure_can_block_user! @user
-    UserBlocker.block(@user, current_user)
+    UserBlocker.block(@user, current_user, keep_posts: true)
     render nothing: true
   end
 

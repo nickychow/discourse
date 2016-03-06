@@ -1,8 +1,9 @@
+import DiscourseURL from 'discourse/lib/url';
 import { acceptance } from "helpers/qunit-helpers";
 
 acceptance("Category Edit", { loggedIn: true });
 
-test("Can open the category modal", (assert) => {
+test("Can open the category modal", assert => {
   visit("/c/bug");
 
   click('.edit-category');
@@ -16,7 +17,7 @@ test("Can open the category modal", (assert) => {
   });
 });
 
-test("Change the category color", (assert) => {
+test("Change the category color", assert => {
   visit("/c/bug");
 
   click('.edit-category');
@@ -24,19 +25,19 @@ test("Change the category color", (assert) => {
   click('#save-category');
   andThen(() => {
     assert.ok(!visible('#discourse-modal'), 'it closes the modal');
-    assert.equal(Discourse.URL.redirectedTo, '/c/bug', 'it does one of the rare full page redirects');
+    assert.equal(DiscourseURL.redirectedTo, '/c/bug', 'it does one of the rare full page redirects');
   });
 });
 
-test("Change the topic template", (assert) => {
+test("Change the topic template", assert => {
   visit("/c/bug");
 
   click('.edit-category');
   click('.edit-category-topic-template');
-  fillIn('.wmd-input', 'this is the new topic template');
+  fillIn('.d-editor-input', 'this is the new topic template');
   click('#save-category');
   andThen(() => {
     assert.ok(!visible('#discourse-modal'), 'it closes the modal');
-    assert.equal(Discourse.URL.redirectedTo, '/c/bug', 'it does one of the rare full page redirects');
+    assert.equal(DiscourseURL.redirectedTo, '/c/bug', 'it does one of the rare full page redirects');
   });
 });

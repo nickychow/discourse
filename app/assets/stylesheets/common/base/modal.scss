@@ -50,8 +50,8 @@
 }
 
 @-webkit-keyframes slidein {
-  from { transform: translateY(-20%); }
-    to { transform: translateY(0); }
+  from { -webkit-transform: translateY(-20%); }
+    to { -webkit-transform: translateY(0); }
 }
 
 .modal-outer-container {
@@ -64,7 +64,6 @@
   max-width: 710px;
   margin: 0 auto;
   background-color: $secondary;
-  border: 1px solid dark-light-diff($primary, $secondary, 90%, -60%);
   border: 1px solid dark-light-diff($primary, $secondary, 90%, -60%);
 
   box-shadow: 0 3px 7px rgba(0,0,0, .8);
@@ -104,10 +103,6 @@
 
 .modal.edit-category-modal {
   .modal-body {
-    .pagedown-editor {
-      width: 98%;
-    }
-
     textarea {
       height: 10em;
     }
@@ -130,6 +125,9 @@
   }
 
   .modal-body {
+    &.full-height-modal {
+      max-height: calc(100vh - 150px);
+    }
     textarea {
       width: 99%;
       height: 80px;
@@ -138,7 +136,7 @@
       color: $primary;
     }
     p {
-      color: darken($primary, 40%);;
+      color: darken($primary, 40%);
       font-size: 0.929em;
     }
     .archetype-option {

@@ -16,6 +16,10 @@ class TopicView
     20
   end
 
+  def self.default_post_custom_fields
+    @default_post_custom_fields ||= ["action_code_who"]
+  end
+
   def self.post_custom_fields_whitelisters
     @post_custom_fields_whitelisters ||= Set.new
   end
@@ -25,7 +29,8 @@ class TopicView
   end
 
   def self.whitelisted_post_custom_fields(user)
-    post_custom_fields_whitelisters.map { |w| w.call(user) }.flatten.uniq
+    wpcf = default_post_custom_fields + post_custom_fields_whitelisters.map { |w| w.call(user) }
+    wpcf.flatten.uniq
   end
 
   def initialize(topic_id, user=nil, options={})
@@ -38,10 +43,7 @@ class TopicView
       self.instance_variable_set("@#{key}".to_sym, value)
     end
 
-    # work around people somehow sending in arrays,
-    # arrays are not supported
-    @page = @page.to_i rescue 1
-    @page = 1 if @page.zero?
+    @page = 1 if (!@page || @page.zero?)
     @chunk_size = options[:slow_platform] ? TopicView.slow_chunk_size : TopicView.chunk_size
     @limit ||= @chunk_size
 
@@ -159,9 +161,18 @@ class TopicView
     (excerpt || "").gsub(/\n/, ' ').strip
   end
 
+  def read_time
+    return nil if @post_number.present? && @post_number.to_i != 1 # only show for topic URLs
+    (@topic.word_count/SiteSetting.read_time_word_count).floor if @topic.word_count
+  end
+
+  def like_count
+    return nil if @post_number.present? && @post_number.to_i != 1 # only show for topic URLs
+    @topic.like_count
+  end
+
   def image_url
-    return nil if desired_post.blank?
-    desired_post.user.try(:small_avatar_url)
+    @topic.image_url || SiteSetting.default_opengraph_image_url
   end
 
   def filter_posts(opts = {})
@@ -169,7 +180,7 @@ class TopicView
     return filter_posts_by_ids(opts[:post_ids]) if opts[:post_ids].present?
     return filter_best(opts[:best], opts) if opts[:best].present?
 
-    filter_posts_paged(opts[:page].to_i)
+    filter_posts_paged(@page)
   end
 
   def primary_group_names
@@ -186,16 +197,15 @@ class TopicView
         result[g[0]] = g[1]
       end
     end
-    result
+
+    @group_names = result
   end
 
   # Find the sort order for a post in the topic
   def sort_order_for_post_number(post_number)
-    Post.where(topic_id: @topic.id, post_number: post_number)
-        .with_deleted
-        .select(:sort_order)
-        .first
-        .try(:sort_order)
+    posts = Post.where(topic_id: @topic.id, post_number: post_number).with_deleted
+    posts = filter_post_types(posts)
+    posts.select(:sort_order).first.try(:sort_order)
   end
 
   # Filter to all posts near a particular post number
@@ -282,7 +292,6 @@ class TopicView
   end
 
   def suggested_topics
-    return nil if topic.private_message?
     @suggested_topics ||= TopicQuery.new(@user).list_suggested_for(topic)
   end
 
@@ -332,11 +341,22 @@ class TopicView
 
   private
 
+  def filter_post_types(posts)
+    visible_types = Topic.visible_post_types(@user)
+
+    if @user.present?
+      posts.where("user_id = ? OR post_type IN (?)", @user.id, visible_types)
+    else
+      posts.where(post_type: visible_types)
+    end
+  end
+
   def filter_posts_by_ids(post_ids)
     # TODO: Sort might be off
     @posts = Post.where(id: post_ids, topic_id: @topic.id)
                  .includes(:user, :reply_to_user)
                  .order('sort_order')
+    @posts = filter_post_types(@posts)
     @posts = @posts.with_deleted if @guardian.can_see_deleted_posts?
     @posts
   end
@@ -355,13 +375,13 @@ class TopicView
   end
 
   def find_topic(topic_id)
-    finder = Topic.where(id: topic_id).includes(:category)
-    finder = finder.with_deleted if @guardian.can_see_deleted_topics?
+    # with_deleted covered in #check_and_raise_exceptions
+    finder = Topic.with_deleted.where(id: topic_id).includes(:category)
     finder.first
   end
 
   def unfiltered_posts
-    result = @topic.posts
+    result = filter_post_types(@topic.posts)
     result = result.with_deleted if @guardian.can_see_deleted_posts?
     result = @topic.posts.where("user_id IS NOT NULL") if @exclude_deleted_users
     result
@@ -408,7 +428,7 @@ class TopicView
     if @topic.present? && @topic.private_message? && @user.blank?
       raise Discourse::NotLoggedIn.new
     end
-    guardian.ensure_can_see!(@topic)
+    raise Discourse::InvalidAccess.new("can't see #{@topic}", @topic) unless guardian.can_see?(@topic)
   end
 
 

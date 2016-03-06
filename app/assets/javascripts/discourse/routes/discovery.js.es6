@@ -5,7 +5,7 @@
 import OpenComposer from "discourse/mixins/open-composer";
 import { scrollTop } from "discourse/mixins/scroll-top";
 
-const DiscoveryRoute = Discourse.Route.extend(OpenComposer, {
+export default Discourse.Route.extend(OpenComposer, {
   redirect() {
     return this.redirectIfLoginRequired();
   },
@@ -15,7 +15,8 @@ const DiscoveryRoute = Discourse.Route.extend(OpenComposer, {
         transition.targetName.indexOf("discovery.top") === -1 &&
         Discourse.User.currentProp("should_be_redirected_to_top")) {
       Discourse.User.currentProp("should_be_redirected_to_top", false);
-      this.replaceWith("discovery.top");
+      const period = Discourse.User.currentProp("redirect_to_top.period") || "all";
+      this.replaceWith(`discovery.top${period.capitalize()}`);
     }
   },
 
@@ -45,9 +46,16 @@ const DiscoveryRoute = Discourse.Route.extend(OpenComposer, {
 
     createTopic() {
       this.openComposer(this.controllerFor("discovery/topics"));
+    },
+
+    dismissReadTopics(dismissTopics) {
+      var operationType = dismissTopics ? "topics" : "posts";
+      this.controllerFor("discovery/topics").send('dismissRead', operationType);
+    },
+
+    dismissRead(operationType) {
+      this.controllerFor("discovery/topics").send('dismissRead', operationType);
     }
   }
 
 });
-
-export default DiscoveryRoute;

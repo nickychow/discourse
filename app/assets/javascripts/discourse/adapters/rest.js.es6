@@ -1,4 +1,7 @@
-const ADMIN_MODELS = ['plugin'];
+import { hashString } from 'discourse/lib/hash';
+
+const ADMIN_MODELS = ['plugin', 'site-customization', 'embeddable-host'];
+
 
 export function Result(payload, responseJson) {
   this.payload = payload;
@@ -18,14 +21,21 @@ function rethrow(error) {
 
 export default Ember.Object.extend({
 
+
+  storageKey(type, findArgs, options) {
+    if (options && options.cacheKey) {
+      return options.cacheKey;
+    }
+    const hashedArgs = Math.abs(hashString(JSON.stringify(findArgs)));
+    return `${type}_${hashedArgs}`;
+  },
+
   basePath(store, type) {
-    if (ADMIN_MODELS.indexOf(type) !== -1) { return "/admin/"; }
+    if (ADMIN_MODELS.indexOf(type.replace('_', '-')) !== -1) { return "/admin/"; }
     return "/";
   },
 
-  pathFor(store, type, findArgs) {
-    let path = this.basePath(store, type, findArgs) + Ember.String.underscore(store.pluralize(type));
-
+  appendQueryParams(path, findArgs) {
     if (findArgs) {
       if (typeof findArgs === "object") {
         const queryString = Object.keys(findArgs)
@@ -33,15 +43,19 @@ export default Ember.Object.extend({
                                   .map(k => k + "=" + encodeURIComponent(findArgs[k]));
 
         if (queryString.length) {
-          path += "?" + queryString.join('&');
+          return path + "?" + queryString.join('&');
         }
       } else {
         // It's serializable as a string if not an object
-        path += "/" + findArgs;
+        return path + "/" + findArgs;
       }
     }
-
     return path;
+  },
+
+  pathFor(store, type, findArgs) {
+    let path = this.basePath(store, type, findArgs) + Ember.String.underscore(store.pluralize(type));
+    return this.appendQueryParams(path, findArgs);
   },
 
   findAll(store, type) {
@@ -51,6 +65,17 @@ export default Ember.Object.extend({
 
   find(store, type, findArgs) {
     return ajax(this.pathFor(store, type, findArgs)).catch(rethrow);
+  },
+
+  findStale(store, type, findArgs, options) {
+    if (this.cached) {
+      return this.cached[this.storageKey(type, findArgs, options)];
+    }
+  },
+
+  cacheFind(store, type, findArgs, opts, hydrated) {
+    this.cached = this.cached || {};
+    this.cached[this.storageKey(type,findArgs,opts)] = hydrated;
   },
 
   update(store, type, id, attrs) {

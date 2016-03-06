@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-require 'spec_helper'
+require 'rails_helper'
 require_dependency 'post_creator'
 
 describe Category do
@@ -33,6 +33,15 @@ describe Category do
 
       expect(read_restricted).to be false
       expect(resolved).to be_blank
+    end
+  end
+
+  describe "permissions_params" do
+    it "returns the right group names and permission type" do
+      category = Fabricate(:category)
+      group = Fabricate(:group)
+      category_group = Fabricate(:category_group, category: category, group: group)
+      expect(category.permissions_params).to eq({ "#{group.name}" => category_group.permission_type })
     end
   end
 
@@ -442,7 +451,7 @@ describe Category do
       before do
         post = create_post(user: @category.user, category: @category.name)
 
-        SiteSetting.stubs(:ninja_edit_window).returns(1.minute.to_i)
+        SiteSetting.stubs(:editing_grace_period).returns(1.minute.to_i)
         post.revise(post.user, { raw: 'updated body' }, revised_at: post.updated_at + 2.minutes)
 
         Category.update_stats
@@ -490,6 +499,22 @@ describe Category do
         subcategory = Fabricate(:category, name: "child",
                                 parent_category_id: parent_category.id)
         expect(subcategory.url).to eq "/c/parent/child"
+      end
+    end
+  end
+
+  describe "#url_with_id" do
+    let(:category) { Fabricate(:category, name: 'cats') }
+
+    it "includes the id in the URL" do
+      expect(category.url_with_id).to eq("/c/#{category.id}-cats")
+    end
+
+    context "child category" do
+      let(:child_category) { Fabricate(:category, parent_category_id: category.id, name: 'dogs') }
+
+      it "includes the id in the URL" do
+        expect(child_category.url_with_id).to eq("/c/cats/dogs/#{child_category.id}")
       end
     end
   end

@@ -136,13 +136,6 @@ Discourse.BBCode.replaceBBCode('li', function(contents) { return ['li'].concat(D
 
 Discourse.BBCode.rawBBCode('img', function(contents) { return ['img', {href: contents}]; });
 Discourse.BBCode.rawBBCode('email', function(contents) { return ['a', {href: "mailto:" + contents, 'data-bbcode': true}, contents]; });
-Discourse.BBCode.rawBBCode('spoiler', function(contents) {
-  if (/<img/i.test(contents)) {
-    return ['div', { 'class': 'spoiler' }, contents];
-  } else {
-    return ['span', { 'class': 'spoiler' }, contents];
-  }
-});
 
 Discourse.BBCode.replaceBBCode('url', function(contents) {
   if (!Array.isArray(contents)) { return; }

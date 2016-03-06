@@ -20,19 +20,19 @@ class Emoji
   end
 
   def self.all
-    Discourse.cache.fetch("all_emojis") { standard | custom }
+    Discourse.cache.fetch("all_emojis:v2") { standard | custom }
   end
 
   def self.standard
-    Discourse.cache.fetch("standard_emojis") { load_standard }
+    Discourse.cache.fetch("standard_emojis:v2") { load_standard }
   end
 
   def self.aliases
-    Discourse.cache.fetch("aliases_emojis") { load_aliases }
+    Discourse.cache.fetch("aliases_emojis:v2") { load_aliases }
   end
 
   def self.custom
-    Discourse.cache.fetch("custom_emojis") { load_custom }
+    Discourse.cache.fetch("custom_emojis:v2") { load_custom }
   end
 
   def self.exists?(name)
@@ -47,12 +47,12 @@ class Emoji
     extension = File.extname(path)
     Emoji.new(path).tap do |e|
       e.name = File.basename(path, ".*")
-      e.url = "/#{base_url}/#{e.name}#{extension}"
+      e.url = "#{base_url}/#{e.name}#{extension}"
     end
   end
 
   def self.create_from_db_item(emoji)
-    name = emoji["aliases"].first
+    name = emoji["name"]
     filename = "#{name}.png"
     Emoji.new.tap do |e|
       e.name = name
@@ -91,16 +91,19 @@ class Emoji
   end
 
   def self.load_standard
-    db.map { |emoji| Emoji.create_from_db_item(emoji) }
+    db['emojis'].map {|e| Emoji.create_from_db_item(e) }
   end
 
   def self.load_aliases
-    aliases = {}
+    return @aliases if @aliases
 
-    db.select { |emoji| emoji["aliases"].count > 1 }
-      .each { |emoji| aliases[emoji["aliases"][0]] = emoji["aliases"][1..-1] }
+    @aliases ||= db['aliases']
 
-    aliases
+    # Fix how `slightly_smiling` was mislabeled
+    @aliases['slight_smile'] ||= []
+    @aliases['slight_smile'] << 'slightly_smiling'
+
+    @aliases
   end
 
   def self.load_custom
@@ -110,12 +113,38 @@ class Emoji
   end
 
   def self.base_directory
-    "public/#{base_url}"
+    "public#{base_url}"
   end
 
   def self.base_url
     db = RailsMultisite::ConnectionManagement.current_db
-    "uploads/#{db}/_emoji"
+    "#{Discourse.base_uri}/uploads/#{db}/_emoji"
+  end
+
+  def self.unicode_replacements
+    return @unicode_replacements if @unicode_replacements
+
+
+    @unicode_replacements = {}
+    db['emojis'].each do |e|
+      hex = e['code'].hex
+      # Don't replace digits or letters
+      if hex > 128
+        @unicode_replacements[[hex].pack('U')] = e['name']
+      end
+    end
+
+    @unicode_replacements["\u{2639}"] = 'frowning'
+    @unicode_replacements["\u{263A}"] = 'slight_smile'
+    @unicode_replacements["\u{263B}"] = 'slight_smile'
+    @unicode_replacements["\u{2661}"] = 'heart'
+    @unicode_replacements["\u{2665}"] = 'heart'
+
+    @unicode_replacements
+  end
+
+  def self.unicode_replacements_json
+    @unicode_replacements_json ||= unicode_replacements.to_json
   end
 
 end

@@ -1,4 +1,5 @@
 import { iconHTML } from 'discourse/helpers/fa-icon';
+import { default as computed, observes } from 'ember-addons/ember-computed-decorators';
 
 export default Ember.Component.extend({
   tagName: 'button',
@@ -7,17 +8,20 @@ export default Ember.Component.extend({
 
   noText: Ember.computed.empty('translatedLabel'),
 
-  translatedTitle: function() {
-    const title = this.get('title');
-    return title ? I18n.t(title) : this.get('translatedLabel');
-  }.property('title', 'translatedLabel'),
+  @computed("title")
+  translatedTitle(title) {
+    if (title) return I18n.t(title);
+  },
 
-  translatedLabel: function() {
-    const label = this.get('label');
-    if (label) {
-      return I18n.t(this.get('label'));
-    }
-  }.property('label'),
+  @computed("label")
+  translatedLabel(label) {
+    if (label) return I18n.t(label);
+  },
+
+  @observes('icon')
+  iconChanged() {
+    this.rerender();
+  },
 
   render(buffer) {
     const label = this.get('translatedLabel'),

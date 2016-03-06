@@ -1,4 +1,4 @@
-require 'spec_helper'
+require 'rails_helper'
 require_dependency 'post_destroyer'
 
 describe PostAction do
@@ -11,6 +11,24 @@ describe PostAction do
   let(:post) { Fabricate(:post) }
   let(:second_post) { Fabricate(:post, topic_id: post.topic_id) }
   let(:bookmark) { PostAction.new(user_id: post.user_id, post_action_type_id: PostActionType.types[:bookmark] , post_id: post.id) }
+
+  describe "rate limits" do
+
+    it "limits redo/undo" do
+
+      RateLimiter.stubs(:disabled?).returns(false)
+
+      PostAction.act(eviltrout, post, PostActionType.types[:like])
+      PostAction.remove_act(eviltrout, post, PostActionType.types[:like])
+      PostAction.act(eviltrout, post, PostActionType.types[:like])
+      PostAction.remove_act(eviltrout, post, PostActionType.types[:like])
+
+      expect {
+        PostAction.act(eviltrout, post, PostActionType.types[:like])
+      }.to raise_error
+
+    end
+  end
 
   describe "messaging" do
 
@@ -43,8 +61,11 @@ describe PostAction do
       expect(topic_user_ids).to include(codinghorror.id)
       expect(topic_user_ids).to include(mod.id)
 
-      # Notification level should be "Watching" for everyone
-      expect(topic.topic_users(true).map(&:notification_level).uniq).to eq([TopicUser.notification_levels[:watching]])
+      expect(topic.topic_users.where(user_id: mod.id)
+              .pluck(:notification_level).first).to eq(TopicUser.notification_levels[:tracking])
+
+      expect(topic.topic_users.where(user_id: codinghorror.id)
+              .pluck(:notification_level).first).to eq(TopicUser.notification_levels[:watching])
 
       # reply to PM should not clear flag
       PostCreator.new(mod, topic_id: posts[0].topic_id, raw: "This is my test reply to the user, it should clear flags").create
@@ -345,8 +366,8 @@ describe PostAction do
       post.reload
 
       expect(post.hidden).to eq(false)
-      expect(post.hidden_reason_id).to eq(nil)
-      expect(post.hidden_at).to be_blank
+      expect(post.hidden_reason_id).to eq(Post.hidden_reasons[:flag_threshold_reached]) # keep most recent reason
+      expect(post.hidden_at).to be_present # keep the most recent hidden_at time
       expect(post.topic.visible).to eq(true)
 
       PostAction.act(eviltrout, post, PostActionType.types[:spam])
@@ -461,8 +482,6 @@ describe PostAction do
   end
 
   it "prevents user to act twice at the same time" do
-    post = Fabricate(:post)
-
     # flags are already being tested
     all_types_except_flags = PostActionType.types.except(PostActionType.flag_types)
     all_types_except_flags.values.each do |action|
@@ -516,6 +535,22 @@ describe PostAction do
       topic.reload
       expect(topic.posts.count).to eq(1)
     end
+
+    it "should create a notification in the related topic" do
+      post = Fabricate(:post)
+      user = Fabricate(:user)
+      action = PostAction.act(user, post, PostActionType.types[:spam], message: "WAT")
+      topic = action.reload.related_post.topic
+      expect(user.notifications.count).to eq(0)
+
+      SiteSetting.expects(:auto_respond_to_flag_actions).returns(true)
+      PostAction.agree_flags!(post, admin)
+
+      user_notifications = user.notifications
+      expect(user_notifications.count).to eq(1)
+      expect(user_notifications.last.topic).to eq(topic)
+    end
+
   end
 
   describe "rate limiting" do

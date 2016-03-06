@@ -55,17 +55,11 @@
     background: dark-light-diff($primary, $secondary, 65%, -75%);
     color: #fff;
   }
-  &[disabled] {
+  &[disabled], &.disabled {
     background: dark-light-diff($primary, $secondary, 90%, -60%);
-    &:hover { color: scale-color($primary, $lightness: 70%); }
+    &:hover { color: dark-light-choose(scale-color($primary, $lightness: 70%), scale-color($secondary, $lightness: 30%)); }
     cursor: not-allowed;
   }
-}
-
-// Buttons used in admin panel
-// --------------------------------------------------
-.btn-admin {
-  text-align:left;
 }
 
 // Primary button
@@ -73,9 +67,8 @@
 
 .btn-primary {
   border: none;
-  color: $secondary;
   font-weight: normal;
-  color: #fff;
+  color: dark-light-choose(#fff, scale-color($primary, $lightness: 60%));
   background: $tertiary;
 
   &[href] {
@@ -83,13 +76,13 @@
   }
   &:hover {
     color: #fff;
-    background: scale-color($tertiary, $lightness: -20%);
+    background: dark-light-choose(scale-color($tertiary, $lightness: -20%), scale-color($tertiary, $lightness: -20%));
   }
   &:active {
     @include linear-gradient(scale-color($tertiary, $lightness: -20%), scale-color($tertiary, $lightness: -10%));
     color: #fff;
   }
-  &[disabled] {
+  &[disabled], &.disabled {
     background: $tertiary;
   }
 }
@@ -110,7 +103,7 @@
   &:active {
     @include linear-gradient(scale-color($danger, $lightness: -20%), $danger);
   }
-  &[disabled] {
+  &[disabled], &.disabled {
     background: $danger;
   }
 }
@@ -128,8 +121,7 @@
   &:before {
     margin-right: 9px;
     font-family: FontAwesome;
-    line-height: 1.6em;
-    font-size: 1.3em;
+    font-size: 17px;
   }
   &.google, &.google_oauth2 {
     background: $google;

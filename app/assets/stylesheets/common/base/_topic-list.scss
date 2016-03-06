@@ -16,8 +16,8 @@
   }
 }
 
-html.anon .topic-list a.title:visited:not(.badge-notification) {color: scale-color($primary, $lightness: 45%);}
-.topic-list a.title.visited:not(.badge-notification) {color: scale-color($primary, $lightness: 45%);}
+html.anon .topic-list a.title:visited:not(.badge-notification) {color: dark-light-diff($primary, $secondary, 45%, -30%);}
+.topic-list a.title.visited:not(.badge-notification) {color: dark-light-diff($primary, $secondary, 45%, -30%);}
 
 .topic-list {
   width: 100%;
@@ -45,14 +45,14 @@ html.anon .topic-list a.title:visited:not(.badge-notification) {color: scale-col
 
   }
   th {
-    color: scale-color($primary, $lightness: 50%);
+    color: dark-light-choose(scale-color($primary, $lightness: 50%), scale-color($secondary, $lightness: 50%));
     font-weight: normal;
     font-size: 1em;
-    button i.fa {color: scale-color($primary, $lightness: 50%);}
+    button i.fa {color: dark-light-choose(scale-color($primary, $lightness: 50%), scale-color($secondary, $lightness: 50%));}
 
   }
   td {
-    color: scale-color($primary, $lightness: 50%);
+    color: dark-light-choose(scale-color($primary, $lightness: 50%), scale-color($secondary, $lightness: 50%));
     font-size: 1em;
   }
 
@@ -66,7 +66,7 @@ html.anon .topic-list a.title:visited:not(.badge-notification) {color: scale-col
   .topic-excerpt {
     font-size: 0.929em;
     margin-top: 8px;
-    color: scale-color($primary, $lightness: 50%);
+    color: dark-light-choose(scale-color($primary, $lightness: 50%), scale-color($secondary, $lightness: 50%));
     word-wrap: break-word;
     line-height: 1.4;
     padding-right: 20px;
@@ -226,8 +226,11 @@ ol.category-breadcrumb {
 }
 
 .fa-thumb-tack.unpinned {
-  @include fa-icon-rotate(315deg, 1);
+  @include fa-icon-rotate(180deg, 1);
   color: $primary;
+  /* because it is rotated, right becomes left! */
+  padding-left: 3px; 
+  padding-right: 0 !important;
 }
 
 .topic-statuses .fa {
@@ -241,13 +244,15 @@ ol.category-breadcrumb {
   h2 {
     float: left;
     margin: 5px 0 10px;
-
     .top-date-string {
-      color: scale-color($primary, $lightness: 60%);
-      font-weight: normal;
       font-size: 0.7em;
-      text-transform: uppercase;
     }
+  }
+
+  .top-date-string {
+    color: dark-light-choose(scale-color($primary, $lightness: 60%), scale-color($secondary, $lightness: 40%));
+    font-weight: normal;
+    text-transform: uppercase;
   }
 
   button {
@@ -262,11 +267,12 @@ ol.category-breadcrumb {
 
     @include unselectable;
 
+    font-size: 1.2em;
     border: 1px solid dark-light-diff($primary, $secondary, 90%, -60%);
     padding: 5px;
     background: $secondary;
     position: absolute;
-    z-index: 1110;
+    z-index: 999;
     box-shadow: 0 2px 2px rgba(0,0,0, .4);
 
     ul {
@@ -277,9 +283,15 @@ ol.category-breadcrumb {
       li {
         margin: 0;
         padding: 0;
-        a {
+        font-weight: bold;
+        a, a:visited {
           display: block;
           padding: 5px;
+          color: $primary;
+        }
+        .top-date-string {
+          font-weight: normal;
+          font-size: 0.8em;
         }
         &:hover {
           background-color: dark-light-diff($highlight, $secondary, 50%, -70%);
@@ -298,5 +310,5 @@ ol.category-breadcrumb {
 }
 
 div.education {
-  color: scale-color($primary, $lightness: 50%);
+  color: dark-light-choose(scale-color($primary, $lightness: 50%), scale-color($secondary, $lightness: 50%));
 }

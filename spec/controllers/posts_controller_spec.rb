@@ -1,4 +1,4 @@
-require 'spec_helper'
+require 'rails_helper'
 
 shared_examples 'finding and showing post' do
   let(:user) { log_in }
@@ -52,6 +52,32 @@ shared_examples 'action requires login' do |method, action, params|
 end
 
 describe PostsController do
+
+  describe 'latest' do
+    let(:user) { log_in }
+    let!(:post) { Fabricate(:post, user: user) }
+    let!(:topicless_post) { Fabricate(:post, user: user, raw: '<p>Car 54, where are you?</p>') }
+
+    before do
+      topicless_post.update topic_id: -100
+    end
+
+    it 'does not return posts without a topic for json' do
+      xhr :get, :latest, format: :json
+      expect(response).to be_success
+      json = ::JSON.parse(response.body)
+      post_ids = json['latest_posts'].map { |p| p['id'] }
+      expect(post_ids).to include post.id
+      expect(post_ids).to_not include topicless_post.id
+    end
+
+    it 'does not return posts without a topic for rss' do
+      xhr :get, :latest, format: :rss
+      expect(response).to be_success
+      expect(assigns(:posts)).to include post
+      expect(assigns(:posts)).to_not include topicless_post
+    end
+  end
 
   describe 'cooked' do
     before do
@@ -141,8 +167,9 @@ describe PostsController do
     end
 
     it 'asks post for replies' do
-      Post.any_instance.expects(:replies)
-      xhr :get, :replies, post_id: post.id
+      p1 = Fabricate(:post)
+      xhr :get, :replies, post_id: p1.id
+      expect(response.status).to eq(200)
     end
   end
 
@@ -261,16 +288,18 @@ describe PostsController do
 
     include_examples 'action requires login', :put, :update, id: 2
 
-    describe 'when logged in' do
+    let(:post) { Fabricate(:post, user: logged_in_as) }
+    let(:update_params) do
+      {
+        id: post.id,
+        post: { raw: 'edited body', edit_reason: 'typo' },
+        image_sizes: { 'http://image.com/image.jpg' => {'width' => 123, 'height' => 456} },
+      }
+    end
+    let(:moderator) { Fabricate(:moderator) }
 
-      let(:post) { Fabricate(:post, user: log_in) }
-      let(:update_params) do
-        {
-          id: post.id,
-          post: { raw: 'edited body', edit_reason: 'typo' },
-          image_sizes: { 'http://image.com/image.jpg' => {'width' => 123, 'height' => 456} },
-        }
-      end
+    describe 'when logged in as a regular user' do
+      let(:logged_in_as) { log_in }
 
       it 'does not allow to update when edit time limit expired' do
         Guardian.any_instance.stubs(:can_edit?).with(post).returns(false)
@@ -315,6 +344,28 @@ describe PostsController do
         xhr :put, :update, update_params
       end
 
+      it "doesn't allow updating of deleted posts" do
+        first_post = post.topic.ordered_posts.first
+        PostDestroyer.new(moderator, first_post).destroy
+
+        xhr :put, :update, update_params
+        expect(response).not_to be_success
+      end
+    end
+
+    describe "when logged in as staff" do
+      let(:logged_in_as) { log_in(:moderator) }
+
+      it "supports updating posts in deleted topics" do
+        first_post = post.topic.ordered_posts.first
+        PostDestroyer.new(moderator, first_post).destroy
+
+        xhr :put, :update, update_params
+        expect(response).to be_success
+
+        post.reload
+        expect(post.raw).to eq('edited body')
+      end
     end
 
   end
@@ -357,7 +408,7 @@ describe PostsController do
       let(:post) {Fabricate(:post, user: user)}
 
       it "raises an error if the user doesn't have permission to wiki the post" do
-        Guardian.any_instance.expects(:can_wiki?).returns(false)
+        Guardian.any_instance.expects(:can_wiki?).with(post).returns(false)
 
         xhr :put, :wiki, post_id: post.id, wiki: 'true'
 
@@ -365,7 +416,7 @@ describe PostsController do
       end
 
       it "can wiki a post" do
-        Guardian.any_instance.expects(:can_wiki?).returns(true)
+        Guardian.any_instance.expects(:can_wiki?).with(post).returns(true)
 
         xhr :put, :wiki, post_id: post.id, wiki: 'true'
 
@@ -375,7 +426,7 @@ describe PostsController do
 
       it "can unwiki a post" do
         wikied_post = Fabricate(:post, user: user, wiki: true)
-        Guardian.any_instance.expects(:can_wiki?).returns(true)
+        Guardian.any_instance.expects(:can_wiki?).with(wikied_post).returns(true)
 
         xhr :put, :wiki, post_id: wikied_post.id, wiki: 'false'
 
@@ -446,6 +497,10 @@ describe PostsController do
 
   describe 'creating a post' do
 
+    before do
+      SiteSetting.min_first_post_typing_time = 0
+    end
+
     include_examples 'action requires login', :post, :create
 
     context 'api' do
@@ -477,6 +532,46 @@ describe PostsController do
 	      expect { xhr :post, :create }.to raise_error(ActionController::ParameterMissing)
       end
 
+      it 'queues the post if min_first_post_typing_time is not met' do
+
+        SiteSetting.min_first_post_typing_time = 3000
+        # our logged on user here is tl1
+        SiteSetting.auto_block_fast_typers_max_trust_level = 1
+
+        xhr :post, :create, {raw: 'this is the test content', title: 'this is the test title for the topic'}
+
+        expect(response).to be_success
+        parsed = ::JSON.parse(response.body)
+
+        expect(parsed["action"]).to eq("enqueued")
+
+        user.reload
+        expect(user.blocked).to eq(true)
+
+        qp = QueuedPost.first
+
+        mod = Fabricate(:moderator)
+        qp.approve!(mod)
+
+        user.reload
+        expect(user.blocked).to eq(false)
+
+      end
+
+      it 'blocks correctly based on auto_block_first_post_regex' do
+        SiteSetting.auto_block_first_post_regex = "I love candy|i eat s[1-5]"
+
+        xhr :post, :create, {raw: 'this is the test content', title: 'when I eat s3 sometimes when not looking'}
+
+        expect(response).to be_success
+        parsed = ::JSON.parse(response.body)
+
+        expect(parsed["action"]).to eq("enqueued")
+
+        user.reload
+        expect(user.blocked).to eq(true)
+      end
+
       it 'creates the post' do
         xhr :post, :create, {raw: 'this is the test content', title: 'this is the test title for the topic'}
 
@@ -486,6 +581,40 @@ describe PostsController do
         # Deprecated structure
         expect(parsed['post']).to be_blank
         expect(parsed['cooked']).to be_present
+      end
+
+      it "can send a message to a group" do
+
+        group = Group.create(name: 'test_group', alias_level: Group::ALIAS_LEVELS[:nobody])
+        user1 = Fabricate(:user)
+        group.add(user1)
+
+        xhr :post, :create, {
+          raw: 'I can haz a test',
+          title: 'I loves my test',
+          target_usernames: group.name,
+          archetype: Archetype.private_message
+        }
+
+        expect(response).not_to be_success
+
+        # allow pm to this group
+        group.update_columns(alias_level: Group::ALIAS_LEVELS[:everyone])
+
+        xhr :post, :create, {
+          raw: 'I can haz a test',
+          title: 'I loves my test',
+          target_usernames: group.name,
+          archetype: Archetype.private_message
+        }
+
+        expect(response).to be_success
+
+        parsed = ::JSON.parse(response.body)
+        post = Post.find(parsed['id'])
+
+        expect(post.topic.topic_allowed_users.length).to eq(1)
+        expect(post.topic.topic_allowed_groups.length).to eq(1)
       end
 
       it "returns the nested post with a param" do
@@ -574,7 +703,7 @@ describe PostsController do
         end
 
         it "passes reply_to_post_number through" do
-          xhr :post, :create, {raw: 'hello', reply_to_post_number: 6789}
+          xhr :post, :create, {raw: 'hello', reply_to_post_number: 6789, topic_id: 1234}
           expect(assigns(:manager_params)['reply_to_post_number']).to eq('6789')
         end
 
@@ -634,7 +763,7 @@ describe PostsController do
       end
 
       it "ensures regular user cannot see the revisions" do
-        u = log_in(:user)
+        log_in(:user)
         xhr :get, :revisions, post_id: post_revision.post_id, revision: post_revision.number
         expect(response).to be_forbidden
       end
@@ -787,11 +916,10 @@ describe PostsController do
       it "doesn't return secured categories for moderators if they don't have access" do
         user = Fabricate(:user)
         admin = Fabricate(:admin)
-        moderator = Fabricate(:moderator)
+        Fabricate(:moderator)
 
         group = Fabricate(:group)
-        group.add(user)
-        group.appoint_manager(user)
+        group.add_owner(user)
 
         secured_category = Fabricate(:private_category, group: group)
         secured_post = create_post(user: user, category: secured_category)
@@ -808,7 +936,7 @@ describe PostsController do
       it "doesn't return PMs for moderators" do
         user = Fabricate(:user)
         admin = Fabricate(:admin)
-        moderator = Fabricate(:moderator)
+        Fabricate(:moderator)
 
         pm_post = create_post(user: user, archetype: 'private_message', target_usernames: [admin.username])
         PostDestroyer.new(admin, pm_post).destroy
@@ -825,7 +953,7 @@ describe PostsController do
         user = Fabricate(:user)
         admin = Fabricate(:admin)
 
-        post_not_deleted = create_post(user: user)
+        create_post(user: user)
         post_deleted_by_user = create_post(user: user)
         post_deleted_by_admin = create_post(user: user)
 

@@ -16,7 +16,12 @@ class PostsController < ApplicationController
   end
 
   def markdown_num
-    markdown Post.find_by(topic_id: params[:topic_id].to_i, post_number: (params[:post_number] || 1).to_i)
+    if params[:revision].present?
+      post_revision = find_post_revision_from_topic_id
+      render text: post_revision.modifications[:raw].last, content_type: 'text/plain'
+    else
+      markdown Post.find_by(topic_id: params[:topic_id].to_i, post_number: (params[:post_number] || 1).to_i)
+    end
   end
 
   def markdown(post)
@@ -37,11 +42,12 @@ class PostsController < ApplicationController
                 .where('posts.id <= ?', last_post_id)
                 .where('posts.id > ?', last_post_id - 50)
                 .includes(topic: :category)
-                .includes(:user)
+                .includes(user: :primary_group)
+                .includes(:reply_to_user)
                 .limit(50)
     # Remove posts the user doesn't have permission to see
     # This isn't leaking any information we weren't already through the post ID numbers
-    posts = posts.reject { |post| !guardian.can_see?(post) }
+    posts = posts.reject { |post| !guardian.can_see?(post) || post.topic.blank? }
     counts = PostAction.counts_for(posts, current_user)
 
     respond_to do |format|
@@ -58,6 +64,7 @@ class PostsController < ApplicationController
                                         scope: guardian,
                                         root: 'latest_posts',
                                         add_raw: true,
+                                        add_title: true,
                                         all_post_actions: counts)
                                       )
       end
@@ -72,7 +79,7 @@ class PostsController < ApplicationController
   def raw_email
     post = Post.find(params[:id].to_i)
     guardian.ensure_can_view_raw_email!(post)
-    render json: {raw_email: post.raw_email}
+    render json: { raw_email: post.raw_email }
   end
 
   def short_link
@@ -88,7 +95,10 @@ class PostsController < ApplicationController
   end
 
   def create
+
     @manager_params = create_params
+    @manager_params[:first_post_checks] = !is_api?
+
     manager = NewPostManager.new(current_user, @manager_params)
 
     if is_api?
@@ -112,6 +122,9 @@ class PostsController < ApplicationController
     post = Post.where(id: params[:id])
     post = post.with_deleted if guardian.is_staff?
     post = post.first
+
+    raise Discourse::NotFound if post.blank?
+
     post.image_sizes = params[:image_sizes] if params[:image_sizes].present?
 
     if too_late_to(:edit, post)
@@ -137,18 +150,18 @@ class PostsController < ApplicationController
       opts[:skip_validations] = true
     end
 
-    revisor = PostRevisor.new(post)
-    if revisor.revise!(current_user, changes, opts)
-      TopicLink.extract_from(post)
-      QuotedPost.extract_from(post)
-    end
+    topic = post.topic
+    topic = Topic.with_deleted.find(post.topic_id) if guardian.is_staff?
+
+    revisor = PostRevisor.new(post, topic)
+    revisor.revise!(current_user, changes, opts)
 
     return render_json_error(post) if post.errors.present?
-    return render_json_error(post.topic) if post.topic.errors.present?
+    return render_json_error(topic) if topic.errors.present?
 
     post_serializer = PostSerializer.new(post, scope: guardian, root: false)
-    post_serializer.draft_sequence = DraftSequence.current(current_user, post.topic.draft_key)
-    link_counts = TopicLink.counts_for(guardian,post.topic, [post])
+    post_serializer.draft_sequence = DraftSequence.current(current_user, topic.draft_key)
+    link_counts = TopicLink.counts_for(guardian, topic, [post])
     post_serializer.single_post_link_counts = link_counts[post.id] if link_counts.present?
 
     result = { post: post_serializer.as_json }
@@ -171,11 +184,12 @@ class PostsController < ApplicationController
 
   def reply_history
     post = find_post_from_params
-    render_serialized(post.reply_history(params[:max_replies].to_i), PostSerializer)
+    render_serialized(post.reply_history(params[:max_replies].to_i, guardian), PostSerializer)
   end
 
   def destroy
     post = find_post_from_params
+    RateLimiter.new(current_user, "delete_post", 3, 1.minute).performed! unless current_user.staff?
 
     if too_late_to(:delete_post, post)
       render json: {errors: [I18n.t('too_late_to_edit')]}, status: 422
@@ -198,6 +212,7 @@ class PostsController < ApplicationController
 
   def recover
     post = find_post_from_params
+    RateLimiter.new(current_user, "delete_post", 3, 1.minute).performed! unless current_user.staff?
     guardian.ensure_can_recover_post!(post)
     destroyer = PostDestroyer.new(current_user, post)
     destroyer.recover
@@ -225,7 +240,8 @@ class PostsController < ApplicationController
   # Direct replies to this post
   def replies
     post = find_post_from_params
-    render_serialized(post.replies, PostSerializer)
+    replies = post.replies.secured(guardian)
+    render_serialized(replies, PostSerializer)
   end
 
   def revisions
@@ -281,9 +297,9 @@ class PostsController < ApplicationController
   end
 
   def wiki
-    guardian.ensure_can_wiki!
-
     post = find_post_from_params
+    guardian.ensure_can_wiki!(post)
+
     post.revise(current_user, { wiki: params[:wiki] })
 
     render nothing: true
@@ -353,7 +369,7 @@ class PostsController < ApplicationController
   # If a param is present it uses that result structure.
   def backwards_compatible_json(json_obj, success)
     json_obj.symbolize_keys!
-    if params[:nested_post].blank? && json_obj[:errors].blank?
+    if params[:nested_post].blank? && json_obj[:errors].blank? && json_obj[:action] != :enqueued
       json_obj = json_obj[:post]
     end
 
@@ -385,6 +401,22 @@ class PostsController < ApplicationController
     raise Discourse::NotFound unless post_revision
 
     post_revision.post = find_post_from_params
+    guardian.ensure_can_see!(post_revision)
+
+    post_revision
+  end
+
+  def find_post_revision_from_topic_id
+    post = Post.find_by(topic_id: params[:topic_id].to_i, post_number: (params[:post_number] || 1).to_i)
+    raise Discourse::NotFound unless guardian.can_see?(post)
+
+    revision = params[:revision].to_i
+    raise Discourse::NotFound if revision < 2
+
+    post_revision = PostRevision.find_by(post_id: post.id, number: revision)
+    raise Discourse::NotFound unless post_revision
+
+    post_revision.post = post
     guardian.ensure_can_see!(post_revision)
 
     post_revision
@@ -453,6 +485,10 @@ class PostsController < ApplicationController
       result[:is_warning] = false
     end
 
+    if current_user.staff? && SiteSetting.enable_whispers? && params[:whisper] == "true"
+      result[:post_type] = Post.types[:whisper]
+    end
+
     PostRevisor.tracked_topic_fields.each_key do |f|
       params.permit(f => [])
       result[f] = params[f] if params.has_key?(f)
@@ -462,6 +498,14 @@ class PostsController < ApplicationController
     result[:ip_address] = request.remote_ip
     result[:user_agent] = request.user_agent
     result[:referrer] = request.env["HTTP_REFERER"]
+
+    if usernames = result[:target_usernames]
+      usernames = usernames.split(",")
+      groups = Group.mentionable(current_user).where('name in (?)', usernames).pluck('name')
+      usernames -= groups
+      result[:target_usernames] = usernames.join(",")
+      result[:target_group_names] = groups.join(",")
+    end
 
     result
   end

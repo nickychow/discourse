@@ -6,6 +6,14 @@ class SiteCustomization < ActiveRecord::Base
   ENABLED_KEY = '7e202ef2-56d7-47d5-98d8-a9c8d15e57dd'
   @cache = DistributedCache.new('site_customization')
 
+  def self.css_fields
+    %w(stylesheet mobile_stylesheet embedded_css)
+  end
+
+  def self.html_fields
+    %w(body_tag head_tag header mobile_header footer mobile_footer)
+  end
+
   before_create do
     self.enabled ||= false
     self.key ||= SecureRandom.uuid
@@ -13,14 +21,39 @@ class SiteCustomization < ActiveRecord::Base
   end
 
   def compile_stylesheet(scss)
-    DiscourseSassCompiler.compile(scss, 'custom')
+    DiscourseSassCompiler.compile("@import \"theme_variables\";\n" << scss, 'custom')
   rescue => e
     puts e.backtrace.join("\n") unless Sass::SyntaxError === e
     raise e
   end
 
+  def process_html(html)
+    doc = Nokogiri::HTML.fragment(html)
+    doc.css('script[type="text/x-handlebars"]').each do |node|
+      name = node["name"] || node["data-template-name"] || "broken"
+      precompiled =
+        if name =~ /\.raw$/
+          "Discourse.EmberCompatHandlebars.template(#{Barber::EmberCompatPrecompiler.compile(node.inner_html)})"
+        else
+          "Ember.HTMLBars.template(#{Barber::Ember::Precompiler.compile(node.inner_html)})"
+        end
+      compiled = <<SCRIPT
+  Ember.TEMPLATES[#{name.inspect}] = #{precompiled};
+SCRIPT
+      node.replace("<script>#{compiled}</script>")
+    end
+
+    doc.to_s
+  end
+
   before_save do
-    ['stylesheet', 'mobile_stylesheet'].each do |stylesheet_attr|
+    SiteCustomization.html_fields.each do |html_attr|
+      if self.send("#{html_attr}_changed?")
+        self.send("#{html_attr}_baked=", process_html(self.send(html_attr)))
+      end
+    end
+
+    SiteCustomization.css_fields.each do |stylesheet_attr|
       if self.send("#{stylesheet_attr}_changed?")
         begin
           self.send("#{stylesheet_attr}_baked=", compile_stylesheet(self.send(stylesheet_attr)))
@@ -31,9 +64,16 @@ class SiteCustomization < ActiveRecord::Base
     end
   end
 
+  def any_stylesheet_changed?
+    SiteCustomization.css_fields.each do |fieldname|
+      return true if self.send("#{fieldname}_changed?")
+    end
+    false
+  end
+
   after_save do
     remove_from_cache!
-    if stylesheet_changed? || mobile_stylesheet_changed?
+    if any_stylesheet_changed?
       MessageBus.publish "/file-change/#{key}", SecureRandom.hex
       MessageBus.publish "/file-change/#{SiteCustomization::ENABLED_KEY}", SecureRandom.hex
     end
@@ -50,10 +90,24 @@ class SiteCustomization < ActiveRecord::Base
     ENABLED_KEY.dup << RailsMultisite::ConnectionManagement.current_db
   end
 
+  def self.field_for_target(target=nil)
+    target ||= :desktop
+
+    case target.to_sym
+      when :mobile then :mobile_stylesheet
+      when :desktop then :stylesheet
+      when :embedded then :embedded_css
+    end
+  end
+
+  def self.baked_for_target(target=nil)
+    "#{field_for_target(target)}_baked".to_sym
+  end
+
   def self.enabled_stylesheet_contents(target=:desktop)
     @cache["enabled_stylesheet_#{target}"] ||= where(enabled: true)
       .order(:name)
-      .pluck(target == :desktop ? :stylesheet_baked : :mobile_stylesheet_baked)
+      .pluck(baked_for_target(target))
       .compact
       .join("\n")
   end
@@ -63,7 +117,7 @@ class SiteCustomization < ActiveRecord::Base
       enabled_stylesheet_contents(target)
     else
       where(key: key)
-        .pluck(target == :mobile ? :mobile_stylesheet_baked : :stylesheet_baked)
+        .pluck(baked_for_target(target))
         .first
     end
   end
@@ -101,7 +155,12 @@ class SiteCustomization < ActiveRecord::Base
     val = if styles.present?
       styles.map do |style|
         lookup = target == :mobile ? "mobile_#{field}" : field
-        style.send(lookup)
+        if html_fields.include?(lookup.to_s)
+          style.ensure_baked!(lookup)
+          style.send("#{lookup}_baked")
+        else
+          style.send(lookup)
+        end
       end.compact.join("\n")
     end
 
@@ -117,6 +176,15 @@ class SiteCustomization < ActiveRecord::Base
     @cache.clear
   end
 
+  def ensure_baked!(field)
+    unless self.send("#{field}_baked")
+      if val = self.send(field)
+        val = process_html(val) rescue ""
+        self.update_columns("#{field}_baked" => val)
+      end
+    end
+  end
+
   def remove_from_cache!
     self.class.remove_from_cache!(self.class.enabled_key)
     self.class.remove_from_cache!(key)
@@ -127,7 +195,7 @@ class SiteCustomization < ActiveRecord::Base
   end
 
   def stylesheet_link_tag(target=:desktop)
-    content = target == :mobile ? mobile_stylesheet : stylesheet
+    content = self.send(SiteCustomization.field_for_target(target))
     SiteCustomization.stylesheet_link_tag(key, target, content)
   end
 
@@ -149,12 +217,12 @@ end
 # Table name: site_customizations
 #
 #  id                      :integer          not null, primary key
-#  name                    :string(255)      not null
+#  name                    :string           not null
 #  stylesheet              :text
 #  header                  :text
 #  user_id                 :integer          not null
 #  enabled                 :boolean          not null
-#  key                     :string(255)      not null
+#  key                     :string           not null
 #  created_at              :datetime         not null
 #  updated_at              :datetime         not null
 #  stylesheet_baked        :text             default(""), not null
@@ -167,6 +235,14 @@ end
 #  body_tag                :text
 #  top                     :text
 #  mobile_top              :text
+#  embedded_css            :text
+#  embedded_css_baked      :text
+#  head_tag_baked          :text
+#  body_tag_baked          :text
+#  header_baked            :text
+#  mobile_header_baked     :text
+#  footer_baked            :text
+#  mobile_footer_baked     :text
 #
 # Indexes
 #

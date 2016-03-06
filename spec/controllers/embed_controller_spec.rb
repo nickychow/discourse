@@ -1,9 +1,10 @@
-require 'spec_helper'
+require 'rails_helper'
 
 describe EmbedController do
 
   let(:host) { "eviltrout.com" }
   let(:embed_url) { "http://eviltrout.com/2013/02/10/why-discourse-uses-emberjs.html" }
+  let(:discourse_username) { "eviltrout" }
 
   it "is 404 without an embed_url" do
     get :comments
@@ -11,7 +12,6 @@ describe EmbedController do
   end
 
   it "raises an error with a missing host" do
-    SiteSetting.embeddable_hosts = nil
     get :comments, embed_url: embed_url
     expect(response).not_to be_success
   end
@@ -19,7 +19,7 @@ describe EmbedController do
   context "by topic id" do
 
     before do
-      SiteSetting.embeddable_hosts = host
+      Fabricate(:embeddable_host)
       controller.request.stubs(:referer).returns('http://eviltrout.com/some-page')
     end
 
@@ -30,10 +30,42 @@ describe EmbedController do
     end
   end
 
-  context "with a host" do
-    before do
-      SiteSetting.embeddable_hosts = host
+  context ".info" do
+    context "without api key" do
+      it "fails" do
+        get :info, format: :json
+        expect(response).not_to be_success
+      end
     end
+
+    context "with api key" do
+
+      let(:api_key) { ApiKey.create_master_key }
+
+      context "with valid embed url" do
+        let(:topic_embed) { Fabricate(:topic_embed, embed_url: embed_url) }
+
+        it "returns information about the topic" do
+          get :info, format: :json, embed_url: topic_embed.embed_url, api_key: api_key.key, api_username: "system"
+          json = JSON.parse(response.body)
+          expect(json['topic_id']).to eq(topic_embed.topic.id)
+          expect(json['post_id']).to eq(topic_embed.post.id)
+          expect(json['topic_slug']).to eq(topic_embed.topic.slug)
+        end
+      end
+
+      context "without invalid embed url" do
+        it "returns error response" do
+          get :info, format: :json, embed_url: "http://nope.com", api_key: api_key.key, api_username: "system"
+          json = JSON.parse(response.body)
+          expect(json["error_type"]).to eq("not_found")
+        end
+      end
+    end
+  end
+
+  context "with a host" do
+    let!(:embeddable_host) { Fabricate(:embeddable_host) }
 
     it "raises an error with no referer" do
       get :comments, embed_url: embed_url
@@ -63,12 +95,20 @@ describe EmbedController do
         TopicView.expects(:new).with(123, nil, {limit: 100, exclude_first: true, exclude_deleted_users: true})
         get :comments, embed_url: embed_url
       end
+
+      it "provides the topic retriever with the discourse username when provided" do
+        TopicRetriever.expects(:new).with(embed_url, has_entry({author_username: discourse_username}))
+        get :comments, embed_url: embed_url, discourse_username: discourse_username
+      end
+
     end
   end
 
   context "with multiple hosts" do
     before do
-      SiteSetting.embeddable_hosts = "#{host}\nhttp://discourse.org"
+      Fabricate(:embeddable_host)
+      Fabricate(:embeddable_host, host: 'http://discourse.org')
+      Fabricate(:embeddable_host, host: 'https://example.com/1234')
     end
 
     context "success" do
@@ -80,6 +120,12 @@ describe EmbedController do
 
       it "works with the second host" do
         controller.request.stubs(:referer).returns("https://discourse.org/blog-entry-1")
+        get :comments, embed_url: embed_url
+        expect(response).to be_success
+      end
+
+      it "works with a host with a path" do
+        controller.request.stubs(:referer).returns("https://example.com/some-other-path")
         get :comments, embed_url: embed_url
         expect(response).to be_success
       end

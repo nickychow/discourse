@@ -9,8 +9,11 @@ class UploadsController < ApplicationController
     client_id = params[:client_id]
     synchronous = is_api? && params[:synchronous]
 
-    # HACK FOR IE9 to prevent the "download dialog"
-    response.headers["Content-Type"] = "text/plain" if request.user_agent =~ /MSIE 9/
+    if type == "avatar"
+      if SiteSetting.sso_overrides_avatar || !SiteSetting.allow_uploaded_avatars
+        return render json: failed_json, status: 422
+      end
+    end
 
     if synchronous
       data = create_upload(type, file, url)
@@ -48,19 +51,46 @@ class UploadsController < ApplicationController
     render nothing: true, status: 404
   end
 
+  MAXIMUM_UPLOAD_SIZE ||= 10.megabytes
+  DOWNSIZE_RATIO ||= 0.8
+
   def create_upload(type, file, url)
     begin
-      # API can provide a URL
-      if file.nil? && url.present? && is_api?
-        tempfile = FileHelper.download(url, SiteSetting.max_image_size_kb.kilobytes, "discourse-upload-#{type}") rescue nil
-        filename = File.basename(URI.parse(url).path)
+      # ensure we have a file
+      if file.nil?
+        # API can provide a URL
+        if url.present? && is_api?
+          tempfile = FileHelper.download(url, MAXIMUM_UPLOAD_SIZE, "discourse-upload-#{type}") rescue nil
+          filename = File.basename(URI.parse(url).path)
+        end
       else
         tempfile = file.tempfile
         filename = file.original_filename
         content_type = file.content_type
       end
 
-      upload = Upload.create_for(current_user.id, tempfile, filename, tempfile.size, content_type: content_type, image_type: type)
+      return { errors: I18n.t("upload.file_missing") } if tempfile.nil?
+
+      # allow users to upload (not that) large images that will be automatically reduced to allowed size
+      if SiteSetting.max_image_size_kb > 0 && FileHelper.is_image?(filename)
+        uploaded_size = File.size(tempfile.path)
+        if 0 < uploaded_size && uploaded_size < MAXIMUM_UPLOAD_SIZE && Upload.should_optimize?(tempfile.path)
+          attempt = 2
+          allow_animation = type == "avatar" ? SiteSetting.allow_animated_avatars : SiteSetting.allow_animated_thumbnails
+          while attempt > 0
+            downsized_size = File.size(tempfile.path)
+            break if uploaded_size < downsized_size || downsized_size < SiteSetting.max_image_size_kb.kilobytes
+            image_info = FastImage.new(tempfile.path) rescue nil
+            w, h = *(image_info.try(:size) || [0, 0])
+            break if w == 0 || h == 0
+            dimensions = "#{(w * DOWNSIZE_RATIO).floor}x#{(h * DOWNSIZE_RATIO).floor}"
+            OptimizedImage.downsize(tempfile.path, tempfile.path, dimensions, filename: filename, allow_animation: allow_animation)
+            attempt -= 1
+          end
+        end
+      end
+
+      upload = Upload.create_for(current_user.id, tempfile, filename, File.size(tempfile.path), content_type: content_type, image_type: type)
 
       if upload.errors.empty? && current_user.admin?
         retain_hours = params[:retain_hours].to_i

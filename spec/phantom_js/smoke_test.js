@@ -9,7 +9,7 @@ if (system.args.length !== 2) {
   phantom.exit(1);
 }
 
-var TIMEOUT = 10000;
+var TIMEOUT = 15000;
 var page = require("webpage").create();
 
 page.viewportSize = {
@@ -17,9 +17,17 @@ page.viewportSize = {
   height: 768
 };
 
-// page.onConsoleMessage = function(msg) {
-//   console.log(msg);
-// }
+// In the browser, when the cookies are disabled, it also disables the localStorage
+// Here, we're mocking that behavior and making sure the application doesn't blow up
+page.onInitialized = function() {
+  page.evaluate(function() {
+    localStorage["disableLocalStorage"] = true;
+  });
+};
+
+page.onConsoleMessage = function(msg) {
+  console.log(msg);
+}
 
 page.waitFor = function(desc, fn, cb) {
   var start = +new Date();
@@ -37,6 +45,7 @@ page.waitFor = function(desc, fn, cb) {
     } else {
       if (diff > TIMEOUT) {
         console.log("FAILED: " + desc + " - " + diff + "ms");
+        page.render('/tmp/failed.png');
         cb(false);
       } else {
         setTimeout(check, 25);
@@ -50,27 +59,31 @@ page.waitFor = function(desc, fn, cb) {
 
 var actions = [];
 
-var test = function(desc, fn) {
+function test(desc, fn) {
   actions.push({ test: fn, desc: desc });
+};
+
+function wait(delay) {
+  actions.push({ wait: delay });
 }
 
-var exec = function(desc, fn) {
+function exec(desc, fn) {
   actions.push({ exec: fn, desc: desc });
-}
+};
 
-var execAsync = function(desc, delay, fn) {
+function execAsync(desc, delay, fn) {
   actions.push({ execAsync: fn, delay: delay, desc: desc });
-}
+};
 
-var upload = function(input, path) {
+function upload(input, path) {
   actions.push({ upload: path, input: input });
-}
+};
 
-var screenshot = function(filename) {
+function screenshot(filename) {
   actions.push({ screenshot: filename });
 }
 
-var run = function() {
+function run() {
   var allPassed = true;
 
   var done = function() {
@@ -86,7 +99,7 @@ var run = function() {
       actions = actions.splice(1);
       if (action.test) {
         page.waitFor(action.desc, action.test, function(success) {
-          allPassed &= success;
+          allPassed = allPassed && success;
           performNextAction();
         });
       } else if (action.exec) {
@@ -107,6 +120,11 @@ var run = function() {
         console.log("SCREENSHOT: " + action.screenshot);
         page.render(action.screenshot);
         performNextAction();
+      } else if (action.wait) {
+        console.log("WAIT: " + action.wait + "ms");
+        setTimeout(function() {
+          performNextAction();
+        }, action.wait);
       }
     }
   };
@@ -164,34 +182,64 @@ var runTests = function() {
     return document.querySelector(".current-user");
   });
 
+  exec("go home", function() {
+    $('#site-logo').click();
+  });
+
+  test("it shows a topic list", function() {
+    return document.querySelector(".topic-list");
+  });
+
+  exec("open composer", function() {
+    $("#create-topic").click();
+  });
+
+  test('the editor is visible', function() {
+    return document.querySelector(".d-editor");
+  });
+
   exec("compose new topic", function() {
     var date = " (" + (+new Date()) + ")",
         title = "This is a new topic" + date,
         post = "I can write a new topic inside the smoke test!" + date + "\n\n";
 
-    $("#create-topic").click();
     $("#reply-title").val(title).trigger("change");
-    $("#reply-control .wmd-input").val(post).trigger("change");
-    $("#reply-control .wmd-input").focus()[0].setSelectionRange(post.length, post.length);
+    $("#reply-control .d-editor-input").val(post).trigger("change");
+    $("#reply-control .d-editor-input").focus()[0].setSelectionRange(post.length, post.length);
+  });
+
+  test("updates preview", function() {
+    return document.querySelector(".d-editor-preview p");
   });
 
   exec("open upload modal", function() {
-    $(".wmd-image-button").click();
+    $(".d-editor-button-bar .upload").click();
   });
 
   test("upload modal is open", function() {
     return document.querySelector("#filename-input");
   });
 
-  upload("#filename-input", "spec/fixtures/images/large & unoptimized.png");
+  // TODO: Looks like PhantomJS 2.0.0 has a bug with `uploadFile`
+  // which breaks this code.
 
-  exec("click upload button", function() {
-    $(".modal .btn-primary").click();
-  });
-
-  test("image is uploaded", function() {
-    return document.querySelector(".cooked img");
-  });
+  // upload("#filename-input", "spec/fixtures/images/large & unoptimized.png");
+  // test("the file is inserted into the input", function() {
+  //   return document.getElementById('filename-input').files.length
+  // });
+  // screenshot('/tmp/upload-modal.png');
+  //
+  // test("upload modal is open", function() {
+  //   return document.querySelector("#filename-input");
+  // });
+  //
+  // exec("click upload button", function() {
+  //   $(".modal .btn-primary").click();
+  // });
+  //
+  // test("image is uploaded", function() {
+  //   return document.querySelector(".cooked img");
+  // });
 
   exec("submit the topic", function() {
     $("#reply-control .create").click();
@@ -206,16 +254,16 @@ var runTests = function() {
   });
 
   test("composer is open", function() {
-    return document.querySelector("#reply-control .wmd-input");
+    return document.querySelector("#reply-control .d-editor-input");
   });
 
   exec("compose reply", function() {
     var post = "I can even write a reply inside the smoke test ;) (" + (+new Date()) + ")";
-    $("#reply-control .wmd-input").val(post).trigger("change");
+    $("#reply-control .d-editor-input").val(post).trigger("change");
   });
 
   test("waiting for the preview", function() {
-    return $(".wmd-preview").text().trim().indexOf("I can even write") === 0;
+    return $(".d-editor-preview").text().trim().indexOf("I can even write") === 0;
   });
 
   execAsync("submit the reply", 6000, function() {
@@ -230,7 +278,9 @@ var runTests = function() {
   run();
 };
 
-page.open(system.args[1], function(status) {
+phantom.clearCookies();
+page.open(system.args[1], function() {
+  page.evaluate(function() { localStorage.clear(); });
   console.log("OPENED: " + system.args[1]);
   runTests();
 });

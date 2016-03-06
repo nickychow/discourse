@@ -5,6 +5,7 @@ class Category < ActiveRecord::Base
 
   include Positionable
   include HasCustomFields
+  include CategoryHashtag
 
   belongs_to :topic, dependent: :destroy
   belongs_to :topic_only_relative_url,
@@ -31,6 +32,8 @@ class Category < ActiveRecord::Base
                    uniqueness: { scope: :parent_category_id, case_sensitive: false },
                    length: { in: 1..50 }
   validate :parent_category_validator
+
+  validate :email_in_validator
 
   validate :ensure_slug
   before_save :apply_permissions
@@ -75,11 +78,12 @@ class Category < ActiveRecord::Base
       scoped_to_permissions(guardian, [:create_post, :full])
     end
   }
+
   delegate :post_template, to: 'self.class'
 
   # permission is just used by serialization
   # we may consider wrapping this in another spot
-  attr_accessor :displayable_topics, :permission, :subcategory_ids, :notification_level
+  attr_accessor :displayable_topics, :permission, :subcategory_ids, :notification_level, :has_children
 
   def self.last_updated_at
     order('updated_at desc').limit(1).pluck(:updated_at).first.to_i
@@ -193,13 +197,17 @@ SQL
   end
 
   def topic_url
-    topic_only_relative_url.try(:relative_url)
+    if has_attribute?("topic_slug")
+      Topic.relative_url(topic_id, read_attribute(:topic_slug))
+    else
+      topic_only_relative_url.try(:relative_url)
+    end
   end
 
   def description_text
     return nil unless description
 
-    @@cache ||= LruRedux::ThreadSafeCache.new(100)
+    @@cache ||= LruRedux::ThreadSafeCache.new(1000)
     @@cache.getset(self.description) do
       Nokogiri::HTML(self.description).text
     end
@@ -226,7 +234,7 @@ SQL
     end
     # only allow to use category itself id. new_record doesn't have a id.
     unless new_record?
-      match_id = /(\d+)-category/.match(self.slug)
+      match_id = /^(\d+)-category/.match(self.slug)
       errors.add(:slug, :invalid) if match_id && match_id[1] && match_id[1] != self.id.to_s
     end
   end
@@ -283,6 +291,14 @@ SQL
     set_permissions(permissions)
   end
 
+  def permissions_params
+    hash = {}
+    category_groups.includes(:group).each do |category_group|
+      hash[category_group.group_name] = category_group.permission_type
+    end
+    hash
+  end
+
   def apply_permissions
     if @permissions
       category_groups.destroy_all
@@ -294,7 +310,16 @@ SQL
   end
 
   def downcase_email
-    self.email_in = email_in.downcase if self.email_in
+    self.email_in = (email_in || "").strip.downcase.presence
+  end
+
+  def email_in_validator
+    return if self.email_in.blank?
+    email_in.split("|").each do |email|
+      unless Email.is_valid?(email)
+        self.errors.add(:base, I18n.t('category.errors.invalid_email_in', email_in: email))
+      end
+    end
   end
 
   def downcase_name
@@ -366,11 +391,12 @@ SQL
   end
 
   def self.find_by_email(email)
-    self.find_by(email_in: Email.downcase(email))
+    self.where("email_in LIKE ?", "%#{Email.downcase(email)}%").first
   end
 
   def has_children?
-    id && Category.where(parent_category_id: id).exists?
+    @has_children ||= (id && Category.where(parent_category_id: id).exists?) ? :true : :false
+    @has_children == :true
   end
 
   def uncategorized?
@@ -385,8 +411,8 @@ SQL
     @@url_cache.clear
   end
 
-  def full_slug
-    url[3..-1].gsub("/", "-")
+  def full_slug(separator = "-")
+    url[3..-1].gsub("/", separator)
   end
 
   def url
@@ -401,6 +427,10 @@ SQL
     end
 
     url
+  end
+
+  def url_with_id
+    self.parent_category ? "#{url}/#{self.id}" : "#{Discourse.base_uri}/c/#{self.id}-#{self.slug}"
   end
 
   # If the name changes, try and update the category definition topic too if it's
@@ -433,7 +463,7 @@ end
 #  topics_year                   :integer          default(0)
 #  topics_month                  :integer          default(0)
 #  topics_week                   :integer          default(0)
-#  slug                          :string(255)      not null
+#  slug                          :string           not null
 #  description                   :text
 #  text_color                    :string(6)        default("FFFFFF"), not null
 #  read_restricted               :boolean          default(FALSE), not null
@@ -446,15 +476,18 @@ end
 #  posts_year                    :integer          default(0)
 #  posts_month                   :integer          default(0)
 #  posts_week                    :integer          default(0)
-#  email_in                      :string(255)
+#  email_in                      :string
 #  email_in_allow_strangers      :boolean          default(FALSE)
 #  topics_day                    :integer          default(0)
 #  posts_day                     :integer          default(0)
-#  logo_url                      :string(255)
-#  background_url                :string(255)
+#  logo_url                      :string
+#  background_url                :string
 #  allow_badges                  :boolean          default(TRUE), not null
 #  name_lower                    :string(50)       not null
 #  auto_close_based_on_last_post :boolean          default(FALSE)
+#  topic_template                :text
+#  suppress_from_homepage        :boolean          default(FALSE)
+#  contains_messages             :boolean
 #
 # Indexes
 #

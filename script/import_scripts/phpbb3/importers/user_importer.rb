@@ -9,6 +9,10 @@ module ImportScripts::PhpBB3
       @settings = settings
     end
 
+    def map_users_to_import_ids(rows)
+      rows.map { |row| row[:user_id] }
+    end
+
     def map_user(row)
       is_active_user = row[:user_inactive_reason] != Constants::INACTIVE_REGISTER
 
@@ -16,6 +20,7 @@ module ImportScripts::PhpBB3
         id: row[:user_id],
         email: row[:user_email],
         username: row[:username],
+        password: @settings.import_passwords ? row[:user_password] : nil,
         name: @settings.username_as_name ? row[:username] : '',
         created_at: Time.zone.at(row[:user_regdate]),
         last_seen_at: row[:user_lastvisit] == 0 ? Time.zone.at(row[:user_regdate]) : Time.zone.at(row[:user_lastvisit]),
@@ -35,6 +40,10 @@ module ImportScripts::PhpBB3
           @avatar_importer.import_avatar(user, row) if row[:user_avatar_type].present?
         end
       }
+    end
+
+    def map_anonymous_users_to_import_ids(rows)
+      rows.map { |row| row[:post_username] }
     end
 
     def map_anonymous_user(row)
@@ -63,7 +72,8 @@ module ImportScripts::PhpBB3
 
     def parse_birthdate(row)
       return nil if row[:user_birthday].blank?
-      Date.strptime(row[:user_birthday].delete(' '), '%d-%m-%Y') rescue nil
+      birthdate = Date.strptime(row[:user_birthday].delete(' '), '%d-%m-%Y') rescue nil
+      birthdate && birthdate.year > 0 ? birthdate : nil
     end
 
     # Suspends the user if it is currently banned.
@@ -81,10 +91,12 @@ module ImportScripts::PhpBB3
       end
 
       if disable_email
-        user.email_digests = false
-        user.email_private_messages = false
-        user.email_direct = false
-        user.email_always = false
+        user_option = user.user_option
+        user_option.email_digests = false
+        user_option.email_private_messages = false
+        user_option.email_direct = false
+        user_option.email_always = false
+        user_option.save!
       end
 
       if user.save

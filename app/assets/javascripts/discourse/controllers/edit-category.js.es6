@@ -1,8 +1,9 @@
 import ModalFunctionality from 'discourse/mixins/modal-functionality';
-import ObjectController from 'discourse/controllers/object';
+import DiscourseURL from 'discourse/lib/url';
+import { extractError } from 'discourse/lib/ajax-error';
 
 // Modal for editing / creating a category
-export default ObjectController.extend(ModalFunctionality, {
+export default Ember.Controller.extend(ModalFunctionality, {
   selectedTab: null,
   saving: false,
   deleting: false,
@@ -18,7 +19,7 @@ export default ObjectController.extend(ModalFunctionality, {
   },
 
   changeSize: function() {
-    if (this.present('model.description')) {
+    if (!Ember.isEmpty(this.get('model.description'))) {
       this.set('controllers.modal.modalClass', 'edit-category-modal full');
     } else {
       this.set('controllers.modal.modalClass', 'edit-category-modal small');
@@ -67,17 +68,13 @@ export default ObjectController.extend(ModalFunctionality, {
       this.set('saving', true);
       model.set('parentCategory', parentCategory);
 
-      self.set('saving', false);
       this.get('model').save().then(function(result) {
+        self.set('saving', false);
         self.send('closeModal');
         model.setProperties({slug: result.category.slug, id: result.category.id });
-        Discourse.URL.redirectTo("/c/" + Discourse.Category.slugFor(model));
+        DiscourseURL.redirectTo("/c/" + Discourse.Category.slugFor(model));
       }).catch(function(error) {
-        if (error && error.responseText) {
-          self.flash($.parseJSON(error.responseText).errors[0], 'error');
-        } else {
-          self.flash(I18n.t('generic_error'), 'error');
-        }
+        self.flash(extractError(error), 'error');
         self.set('saving', false);
       });
     },
@@ -92,15 +89,9 @@ export default ObjectController.extend(ModalFunctionality, {
           self.get('model').destroy().then(function(){
             // success
             self.send('closeModal');
-            Discourse.URL.redirectTo("/categories");
+            DiscourseURL.redirectTo("/categories");
           }, function(error){
-
-            if (error && error.responseText) {
-              self.flash($.parseJSON(error.responseText).errors[0]);
-            } else {
-              self.flash(I18n.t('generic_error'));
-            }
-
+            self.flash(extractError(error), 'error');
             self.send('reopenModal');
             self.displayErrors([I18n.t("category.delete_error")]);
             self.set('deleting', false);

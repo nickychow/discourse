@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-require 'spec_helper'
+require 'rails_helper'
 require_dependency 'search'
 
 describe Search do
@@ -85,11 +85,35 @@ describe Search do
       expect(result.users.length).to eq(1)
       expect(result.users[0].id).to eq(user.id)
     end
+
+    context 'hiding user profiles' do
+      before { SiteSetting.stubs(:hide_user_profiles_from_public).returns(true) }
+
+      it 'returns no result for anon' do
+        expect(result.users.length).to eq(0)
+      end
+
+      it 'returns a result for logged in users' do
+        result = Search.execute('bruce', type_filter: 'user', guardian: Guardian.new(user))
+        expect(result.users.length).to eq(1)
+      end
+
+    end
+
   end
 
   context 'inactive users' do
     let!(:inactive_user) { Fabricate(:inactive_user, active: false) }
     let(:result) { Search.execute('bruce') }
+
+    it 'does not return a result' do
+      expect(result.users.length).to eq(0)
+    end
+  end
+
+  context 'staged users' do
+    let(:staged) { Fabricate(:staged) }
+    let(:result) { Search.execute(staged.username) }
 
     it 'does not return a result' do
       expect(result.users.length).to eq(0)
@@ -118,7 +142,6 @@ describe Search do
 
        TopicAllowedUser.create!(user_id: reply.user_id, topic_id: topic.id)
        TopicAllowedUser.create!(user_id: post.user_id, topic_id: topic.id)
-
 
        results = Search.execute('mars',
                                 type_filter: 'private_messages',
@@ -369,14 +392,26 @@ describe Search do
       expect(Search.execute('社區指南').posts.first.id).to eq(post.id)
       expect(Search.execute('指南').posts.first.id).to eq(post.id)
     end
+
+    it 'finds chinese topic based on title if tokenization is forced' do
+      skip("skipped until pg app installs the db correctly") if RbConfig::CONFIG["arch"] =~ /darwin/
+
+      SiteSetting.search_tokenize_chinese_japanese_korean = true
+
+      topic = Fabricate(:topic, title: 'My Title Discourse社區指南')
+      post = Fabricate(:post, topic: topic)
+
+      expect(Search.execute('社區指南').posts.first.id).to eq(post.id)
+      expect(Search.execute('指南').posts.first.id).to eq(post.id)
+    end
   end
 
   describe 'Advanced search' do
 
-    it 'supports min_age and max_age in:first' do
+    it 'supports min_age and max_age in:first user:' do
       topic = Fabricate(:topic, created_at: 3.months.ago)
       Fabricate(:post, raw: 'hi this is a test 123 123', topic: topic)
-      Fabricate(:post, raw: 'boom boom shake the room', topic: topic)
+      _post = Fabricate(:post, raw: 'boom boom shake the room', topic: topic)
 
       expect(Search.execute('test min_age:100').posts.length).to eq(1)
       expect(Search.execute('test min_age:10').posts.length).to eq(0)
@@ -387,6 +422,40 @@ describe Search do
       expect(Search.execute('boom').posts.length).to eq(1)
       expect(Search.execute('boom in:first').posts.length).to eq(0)
 
+      expect(Search.execute('user:nobody').posts.length).to eq(0)
+      expect(Search.execute("user:#{_post.user.username}").posts.length).to eq(1)
+      expect(Search.execute("user:#{_post.user_id}").posts.length).to eq(1)
+    end
+
+    it 'supports group' do
+      topic = Fabricate(:topic, created_at: 3.months.ago)
+      post = Fabricate(:post, raw: 'hi this is a test 123 123', topic: topic)
+
+      group = Group.create!(name: "Like_a_Boss")
+      GroupUser.create!(user_id: post.user_id, group_id: group.id)
+
+      expect(Search.execute('group:like_a_boss').posts.length).to eq(1)
+      expect(Search.execute('group:"like a brick"').posts.length).to eq(0)
+    end
+
+    it 'supports badge' do
+
+      topic = Fabricate(:topic, created_at: 3.months.ago)
+      post = Fabricate(:post, raw: 'hi this is a test 123 123', topic: topic)
+
+      badge = Badge.create!(name: "Like a Boss", badge_type_id: 1)
+      UserBadge.create!(user_id: post.user_id, badge_id: badge.id, granted_at: 1.minute.ago, granted_by_id: -1)
+
+      expect(Search.execute('badge:"like a boss"').posts.length).to eq(1)
+      expect(Search.execute('badge:"test"').posts.length).to eq(0)
+    end
+
+    it 'can search numbers correctly, and match exact phrases' do
+      topic = Fabricate(:topic, created_at: 3.months.ago)
+      Fabricate(:post, raw: '3.0 eta is in 2 days horrah', topic: topic)
+
+      expect(Search.execute('3.0 eta').posts.length).to eq(1)
+      expect(Search.execute('"3.0, eta is"').posts.length).to eq(0)
     end
 
     it 'can find by status' do
@@ -433,6 +502,14 @@ describe Search do
       expect(Search.execute('sam order:latest').posts.map(&:id)).to eq([post2.id, post1.id])
 
     end
+  end
+
+  it 'can parse complex strings using ts_query helper' do
+    str = " grigio:babel deprecated? "
+    str << "page page on Atmosphere](https://atmospherejs.com/grigio/babel)xxx: aaa.js:222 aaa'\"bbb"
+
+    ts_query = Search.ts_query(str, "simple")
+    Post.exec_sql("SELECT to_tsvector('bbb') @@ " << ts_query)
   end
 
 end

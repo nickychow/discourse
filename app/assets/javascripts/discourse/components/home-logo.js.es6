@@ -1,22 +1,30 @@
+import DiscourseURL from 'discourse/lib/url';
+import { setting } from 'discourse/lib/computed';
+
 export default Ember.Component.extend({
   classNames: ["title"],
 
-  linkUrl: function() {
-    return Discourse.getURL('/');
+  targetUrl: function() {
+    // For overriding by customizations
+    return '/';
   }.property(),
 
+  linkUrl: function() {
+    return Discourse.getURL(this.get('targetUrl'));
+  }.property('targetUrl'),
+
   showSmallLogo: function() {
-    return !Discourse.Mobile.mobileView && this.get("minimized");
+    return !this.site.mobileView && this.get("minimized");
   }.property("minimized"),
 
   showMobileLogo: function() {
-    return Discourse.Mobile.mobileView && !Ember.isBlank(this.get('mobileBigLogoUrl'));
+    return this.site.mobileView && !Ember.isBlank(this.get('mobileBigLogoUrl'));
   }.property(),
 
-  smallLogoUrl: Discourse.computed.setting('logo_small_url'),
-  bigLogoUrl: Discourse.computed.setting('logo_url'),
-  mobileBigLogoUrl: Discourse.computed.setting('mobile_logo_url'),
-  title: Discourse.computed.setting('title'),
+  smallLogoUrl: setting('logo_small_url'),
+  bigLogoUrl: setting('logo_url'),
+  mobileBigLogoUrl: setting('mobile_logo_url'),
+  title: setting('title'),
 
   click: function(e) {
     // if they want to open in a new tab, let it so
@@ -24,7 +32,7 @@ export default Ember.Component.extend({
 
     e.preventDefault();
 
-    Discourse.URL.routeTo('/');
+    DiscourseURL.routeTo(this.get('targetUrl'));
     return false;
   }
 });

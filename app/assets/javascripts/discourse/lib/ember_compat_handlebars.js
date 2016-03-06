@@ -57,57 +57,73 @@
   stringCompatHelper("with");
 
 
-  RawHandlebars.Compiler = function() {};
-  RawHandlebars.Compiler.prototype = objectCreate(Handlebars.Compiler.prototype);
-  RawHandlebars.Compiler.prototype.compiler = RawHandlebars.Compiler;
+  if (Handlebars.Compiler) {
+    RawHandlebars.Compiler = function() {};
+    RawHandlebars.Compiler.prototype = objectCreate(Handlebars.Compiler.prototype);
+    RawHandlebars.Compiler.prototype.compiler = RawHandlebars.Compiler;
 
-  RawHandlebars.JavaScriptCompiler = function() {};
+    RawHandlebars.JavaScriptCompiler = function() {};
 
-  RawHandlebars.JavaScriptCompiler.prototype = objectCreate(Handlebars.JavaScriptCompiler.prototype);
-  RawHandlebars.JavaScriptCompiler.prototype.compiler = RawHandlebars.JavaScriptCompiler;
-  RawHandlebars.JavaScriptCompiler.prototype.namespace = "Discourse.EmberCompatHandlebars";
+    RawHandlebars.JavaScriptCompiler.prototype = objectCreate(Handlebars.JavaScriptCompiler.prototype);
+    RawHandlebars.JavaScriptCompiler.prototype.compiler = RawHandlebars.JavaScriptCompiler;
+    RawHandlebars.JavaScriptCompiler.prototype.namespace = "Discourse.EmberCompatHandlebars";
 
+    function replaceGet(ast) {
+      var visitor = new Handlebars.Visitor();
+      visitor.mutating = true;
 
-  RawHandlebars.Compiler.prototype.mustache = function(mustache) {
-    if ( !(mustache.params.length || mustache.hash)) {
-
-      var id = new Handlebars.AST.IdNode([{ part: 'get' }]);
-      mustache = new Handlebars.AST.MustacheNode([id].concat([mustache.id]), mustache.hash, mustache.escaped);
+      visitor.MustacheStatement = function(mustache) {
+        if (!(mustache.params.length || mustache.hash)) {
+          mustache.params[0] = mustache.path;
+          mustache.path = {
+            type: "PathExpression",
+            data: false,
+            depth: mustache.path.depth,
+            parts: ["get"],
+            original: "get",
+            loc: mustache.path.loc,
+            strict: true,
+            falsy: true
+          };
+        }
+        return Handlebars.Visitor.prototype.MustacheStatement.call(this, mustache);
+      };
+      visitor.accept(ast);
     }
 
-    return Handlebars.Compiler.prototype.mustache.call(this, mustache);
-  };
+    RawHandlebars.precompile = function(value, asObject) {
+      var ast = Handlebars.parse(value);
+      replaceGet(ast);
 
-  RawHandlebars.precompile = function(value, asObject) {
-    var ast = Handlebars.parse(value);
+      var options = {
+        knownHelpers: {
+          get: true
+        },
+        data: true,
+        stringParams: true
+      };
 
-    var options = {
-      knownHelpers: {
-        get: true
-      },
-      data: true,
-      stringParams: true
+      asObject = asObject === undefined ? true : asObject;
+
+      var environment = new RawHandlebars.Compiler().compile(ast, options);
+      return new RawHandlebars.JavaScriptCompiler().compile(environment, options, undefined, asObject);
     };
 
-    asObject = asObject === undefined ? true : asObject;
+    RawHandlebars.compile = function(string) {
+      var ast = Handlebars.parse(string);
+      replaceGet(ast);
 
-    var environment = new RawHandlebars.Compiler().compile(ast, options);
-    return new RawHandlebars.JavaScriptCompiler().compile(environment, options, undefined, asObject);
-  };
+      // this forces us to rewrite helpers
+      var options = {  data: true, stringParams: true };
+      var environment = new RawHandlebars.Compiler().compile(ast, options);
+      var templateSpec = new RawHandlebars.JavaScriptCompiler().compile(environment, options, undefined, true);
 
+      var template = RawHandlebars.template(templateSpec);
+      template.isMethod = false;
 
-  RawHandlebars.compile = function(string) {
-    var ast = Handlebars.parse(string);
-    // this forces us to rewrite helpers
-    var options = {  data: true, stringParams: true };
-    var environment = new RawHandlebars.Compiler().compile(ast, options);
-    var templateSpec = new RawHandlebars.JavaScriptCompiler().compile(environment, options, undefined, true);
-
-    var template = RawHandlebars.template(templateSpec);
-    template.isMethod = false;
-
-    return template;
-  };
+      return template;
+    };
+  }
 
   RawHandlebars.get = function(ctx, property, options){
     if (options.types && options.data.view) {

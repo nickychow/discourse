@@ -1,3 +1,6 @@
+/* global Int8Array:true */
+import { blank } from 'helpers/qunit-helpers';
+
 module("Discourse.Utilities");
 
 var utils = Discourse.Utilities;
@@ -49,17 +52,6 @@ test("ensures an authorized upload", function() {
   ok(bootbox.alert.calledWith(I18n.t('post.errors.upload_not_authorized', { authorized_extensions: extensions })));
 });
 
-test("prevents files that are too big from being uploaded", function() {
-  Discourse.User.resetCurrent(Discourse.User.create());
-  var image = { name: "image.png", size: 10 * 1024 };
-  Discourse.SiteSettings.max_image_size_kb = 5;
-  Discourse.User.currentProp("trust_level", 1);
-  sandbox.stub(bootbox, "alert");
-
-  not(validUpload([image]));
-  ok(bootbox.alert.calledWith(I18n.t('post.errors.file_too_large', { max_size_kb: 5 })));
-});
-
 var imageSize = 10 * 1024;
 
 var dummyBlob = function() {
@@ -76,8 +68,6 @@ var dummyBlob = function() {
 test("allows valid uploads to go through", function() {
   Discourse.User.resetCurrent(Discourse.User.create());
   Discourse.User.currentProp("trust_level", 1);
-  Discourse.SiteSettings.max_image_size_kb = 15;
-  Discourse.SiteSettings.max_attachment_size_kb = 1;
   sandbox.stub(bootbox, "alert");
 
   // image
@@ -106,7 +96,7 @@ test("getUploadMarkdown", function() {
 });
 
 test("isAnImage", function() {
-  _.each(["png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff"], function(extension) {
+  _.each(["png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff", "ico"], function(extension) {
     var image = "image." + extension;
     ok(utils.isAnImage(image), image + " is recognized as an image");
     ok(utils.isAnImage("http://foo.bar/path/to/" + image), image + " is recognized as an image");
@@ -124,8 +114,8 @@ test("avatarUrl", function() {
 });
 
 var setDevicePixelRatio = function(value) {
-  if(Object.defineProperty) {
-    Object.defineProperty(window, "devicePixelRatio", { value: 2 })
+  if (Object.defineProperty && !window.hasOwnProperty('devicePixelRatio')) {
+    Object.defineProperty(window, "devicePixelRatio", { value: 2 });
   } else {
     window.devicePixelRatio = value;
   }
@@ -168,4 +158,27 @@ test("allowsAttachments", function() {
 test("defaultHomepage", function() {
   Discourse.SiteSettings.top_menu = "latest|top|hot";
   equal(utils.defaultHomepage(), "latest", "default homepage is the first item in the top_menu site setting");
+});
+
+test("caretRowCol", () => {
+  var textarea = document.createElement('textarea');
+  const content = document.createTextNode("01234\n56789\n012345");
+  textarea.appendChild(content);
+  document.body.appendChild(textarea);
+
+  const assertResult = (setCaretPos, expectedRowNum, expectedColNum) => {
+    Discourse.Utilities.setCaretPosition(textarea, setCaretPos);
+
+    const result = Discourse.Utilities.caretRowCol(textarea);
+    equal(result.rowNum, expectedRowNum, "returns the right row of the caret");
+    equal(result.colNum, expectedColNum,  "returns the right col of the caret");
+  };
+
+  assertResult(0, 1, 0);
+  assertResult(5, 1, 5);
+  assertResult(6, 2, 0);
+  assertResult(11, 2, 5);
+  assertResult(14, 3, 2);
+
+  document.body.removeChild(textarea);
 });

@@ -3,7 +3,7 @@ var DiscourseResolver = require('discourse/ember/resolver').default;
 
 // Allow us to import Ember
 define('ember', ['exports'], function(__exports__) {
-  __exports__["default"] = Ember;
+  __exports__.default = Ember;
 });
 
 window.Discourse = Ember.Application.createWithMixins(Discourse.Ajax, {
@@ -14,15 +14,12 @@ window.Discourse = Ember.Application.createWithMixins(Discourse.Ajax, {
     if (!url) return url;
 
     // if it's a non relative URL, return it.
-    if (!/^\/[^\/]/.test(url)) return url;
+    if (url !== '/' && !/^\/[^\/]/.test(url)) return url;
 
-    var u = (Discourse.BaseUri === undefined ? "/" : Discourse.BaseUri);
+    if (url.indexOf(Discourse.BaseUri) !== -1) return url;
+    if (url[0] !== "/") url = "/" + url;
 
-    if (u[u.length-1] === '/') u = u.substring(0, u.length-1);
-    if (url.indexOf(u) !== -1) return url;
-    if (u.length > 0  && url[0] !== "/") url = "/" + url;
-
-    return u + url;
+    return Discourse.BaseUri + url;
   },
 
   getURLWithCDN: function(url) {
@@ -57,7 +54,11 @@ window.Discourse = Ember.Application.createWithMixins(Discourse.Ajax, {
 
   faviconChanged: function() {
     if(Discourse.User.currentProp('dynamic_favicon')) {
-      new Favcount(Discourse.SiteSettings.favicon_url).set(
+      var url = Discourse.SiteSettings.favicon_url;
+      if (/^http/.test(url)) {
+        url = Discourse.getURL("/favicon/proxied?" + encodeURIComponent(url));
+      }
+      new Favcount(url).set(
         this.get('notifyCount')
       );
     }
@@ -66,7 +67,7 @@ window.Discourse = Ember.Application.createWithMixins(Discourse.Ajax, {
   // The classes of buttons to show on a post
   postButtons: function() {
     return Discourse.SiteSettings.post_menu.split("|").map(function(i) {
-      return (i.replace(/\+/, '').capitalize());
+      return i.replace(/\+/, '').capitalize();
     });
   }.property(),
 
@@ -74,25 +75,19 @@ window.Discourse = Ember.Application.createWithMixins(Discourse.Ajax, {
     this.set('notifyCount', count);
   },
 
-  /**
-    Log the current user out of Discourse
-
-    @method logout
-  **/
-  logout: function() {
-    Discourse.User.logout().then(function() {
-      // Reloading will refresh unbound properties
-      Discourse.KeyValueStore.abandonLocal();
-
-      var redirect = Discourse.SiteSettings.logout_redirect;
-      if(redirect.length === 0){
-        window.location.pathname = Discourse.getURL('/');
-      } else {
-        window.location.href = redirect;
-      }
-
-    });
+  notifyBackgroundCountIncrement: function() {
+    if (!this.get('hasFocus')) {
+      this.set('backgroundNotify', true);
+      this.set('notifyCount', (this.get('notifyCount') || 0) + 1);
+    }
   },
+
+  resetBackgroundNotifyCount: function() {
+    if (this.get('hasFocus') && this.get('backgroundNotify')) {
+      this.set('notifyCount', 0);
+    }
+    this.set('backgroundNotify', false);
+  }.observes('hasFocus'),
 
   authenticationComplete: function(options) {
     // TODO, how to dispatch this to the controller without the container?
@@ -109,12 +104,26 @@ window.Discourse = Ember.Application.createWithMixins(Discourse.Ajax, {
 
     $('noscript').remove();
 
-    // Load any ES6 initializers
+    Ember.keys(requirejs._eak_seen).forEach(function(key) {
+      if (/\/pre\-initializers\//.test(key)) {
+        var module = require(key, null, null, true);
+        if (!module) { throw new Error(key + ' must export an initializer.'); }
+        Discourse.initializer(module.default);
+      }
+    });
+
     Ember.keys(requirejs._eak_seen).forEach(function(key) {
       if (/\/initializers\//.test(key)) {
         var module = require(key, null, null, true);
         if (!module) { throw new Error(key + ' must export an initializer.'); }
-        Discourse.initializer(module.default);
+
+        var init = module.default;
+        var oldInitialize = init.initialize;
+        init.initialize = function(app) {
+          oldInitialize.call(this, app.container, Discourse);
+        };
+
+        Discourse.instanceInitializer(init);
       }
     });
 
@@ -125,18 +134,38 @@ window.Discourse = Ember.Application.createWithMixins(Discourse.Ajax, {
     return desired && Discourse.get("currentAssetVersion") !== desired;
   }.property("currentAssetVersion", "desiredAssetVersion"),
 
-  assetVersion: function(prop, val) {
-    if(val) {
-      if(this.get("currentAssetVersion")){
-        this.set("desiredAssetVersion", val);
-      } else {
-        this.set("currentAssetVersion", val);
-      }
-    }
-    return this.get("currentAssetVersion");
-  }.property()
 
+  assetVersion: Ember.computed({
+    get: function() {
+      return this.get("currentAssetVersion");
+    },
+    set: function(key, val) {
+      if(val) {
+        if (this.get("currentAssetVersion")) {
+          this.set("desiredAssetVersion", val);
+        } else {
+          this.set("currentAssetVersion", val);
+        }
+      }
+      return this.get("currentAssetVersion");
+    }
+  })
 });
 
-// TODO: Remove this, it is in for backwards compatibiltiy with plugins
-Discourse.HasCurrentUser = {};
+function RemovedObject(name) {
+  this._removedName = name;
+}
+
+function methodMissing() {
+  console.warn("The " + this._removedName + " object has been removed from Discourse " +
+               "and your plugin needs to be updated.");
+};
+
+Discourse.RemovedObject = RemovedObject;
+
+['reopen', 'registerButton', 'on', 'off'].forEach(function(m) { RemovedObject.prototype[m] = methodMissing; });
+
+['discourse/views/post', 'discourse/components/post-menu'].forEach(function(moduleName) {
+  define(moduleName, [], function() { return new RemovedObject(moduleName); });
+});
+

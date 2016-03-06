@@ -1,34 +1,37 @@
+import { blank } from 'helpers/qunit-helpers';
+import DiscourseURL from "discourse/lib/url";
 import ClickTrack from "discourse/lib/click-track";
 
 var windowOpen,
     win,
     redirectTo;
 
-module("ClickTrack", {
+module("lib:click-track", {
   setup: function() {
 
     // Prevent any of these tests from navigating away
     win = {focus: function() { } };
-    redirectTo = sandbox.stub(Discourse.URL, "redirectTo");
+    redirectTo = sandbox.stub(DiscourseURL, "redirectTo");
     sandbox.stub(Discourse, "ajax");
     windowOpen = sandbox.stub(window, "open").returns(win);
     sandbox.stub(win, "focus");
 
-    fixture().html([
-      '<div id="topic" id="1337">',
-      '  <article data-post-id="42" data-user-id="3141">',
-      '    <a href="http://www.google.com">google.com</a>',
-      '    <a class="lightbox back quote-other-topic" href="http://www.google.com">google.com</a>',
-      '    <a id="with-badge" data-user-id="314" href="http://www.google.com">google.com<span class="badge">1</span></a>',
-      '    <a id="with-badge-but-not-mine" href="http://www.google.com">google.com<span class="badge">1</span></a>',
-      '    <div class="onebox-result">',
-      '      <a id="inside-onebox" href="http://www.google.com">google.com<span class="badge">1</span></a>',
-      '      <a id="inside-onebox-forced" class="track-link" href="http://www.google.com">google.com<span class="badge">1</span></a>',
-      '    </div>',
-      '    <a id="same-site" href="http://discuss.domain.com">forum</a>',
-      '    <a class="attachment" href="http://discuss.domain.com/uploads/default/1234/1532357280.txt">log.txt</a>',
-      '  </article>',
-      '</div>'].join("\n"));
+    fixture().html(
+      `<div id="topic" id="1337">
+        <article data-post-id="42" data-user-id="3141">
+          <a href="http://www.google.com">google.com</a>
+          <a class="lightbox back quote-other-topic" href="http://www.google.com">google.com</a>
+          <a id="with-badge" data-user-id="314" href="http://www.google.com">google.com<span class="badge">1</span></a>
+          <a id="with-badge-but-not-mine" href="http://www.google.com">google.com<span class="badge">1</span></a>
+          <div class="onebox-result">
+            <a id="inside-onebox" href="http://www.google.com">google.com<span class="badge">1</span></a>
+            <a id="inside-onebox-forced" class="track-link" href="http://www.google.com">google.com<span class="badge">1</span></a>
+          </div>
+          <a id="same-site" href="http://discuss.domain.com">forum</a>
+          <a class="attachment" href="http://discuss.domain.com/uploads/default/1234/1532357280.txt">log.txt</a>
+          <a class="hashtag" href="http://discuss.domain.com">#hashtag</a>
+        </article>
+      </div>`);
   }
 });
 
@@ -51,7 +54,7 @@ test("it calls preventDefault when clicking on an a", function() {
   sandbox.stub(clickEvent, "preventDefault");
   track(clickEvent);
   ok(clickEvent.preventDefault.calledOnce);
-  ok(Discourse.URL.redirectTo.calledOnce);
+  ok(DiscourseURL.redirectTo.calledOnce);
 });
 
 test("does not track clicks on back buttons", function() {
@@ -62,6 +65,10 @@ test("does not track clicks on quote buttons", function() {
   ok(track(generateClickEventOn('.quote-other-topic')));
 });
 
+test("does not track clicks on category badges", () => {
+  ok(!track(generateClickEventOn('.hashtag')));
+});
+
 test("removes the href and put it as a data attribute", function() {
   track(generateClickEventOn('a'));
 
@@ -70,10 +77,10 @@ test("removes the href and put it as a data attribute", function() {
   equal($link.data('href'), 'http://www.google.com');
   blank($link.attr('href'));
   ok($link.data('auto-route'));
-  ok(Discourse.URL.redirectTo.calledOnce);
+  ok(DiscourseURL.redirectTo.calledOnce);
 });
 
-asyncTest("restores the href after a while", function() {
+asyncTestDiscourse("restores the href after a while", function() {
   expect(1);
 
   track(generateClickEventOn('a'));
@@ -159,20 +166,20 @@ testOpenInANewTab("it opens in a new tab on middle click", function(clickEvent) 
 });
 
 test("tracks via AJAX if we're on the same site", function() {
-  sandbox.stub(Discourse.URL, "routeTo");
-  sandbox.stub(Discourse.URL, "origin").returns("http://discuss.domain.com");
+  sandbox.stub(DiscourseURL, "routeTo");
+  sandbox.stub(DiscourseURL, "origin").returns("http://discuss.domain.com");
 
   ok(!track(generateClickEventOn('#same-site')));
   ok(Discourse.ajax.calledOnce);
-  ok(Discourse.URL.routeTo.calledOnce);
+  ok(DiscourseURL.routeTo.calledOnce);
 });
 
 test("does not track via AJAX for attachments", function() {
-  sandbox.stub(Discourse.URL, "routeTo");
-  sandbox.stub(Discourse.URL, "origin").returns("http://discuss.domain.com");
+  sandbox.stub(DiscourseURL, "routeTo");
+  sandbox.stub(DiscourseURL, "origin").returns("http://discuss.domain.com");
 
   ok(!track(generateClickEventOn('.attachment')));
-  ok(Discourse.URL.redirectTo.calledOnce);
+  ok(DiscourseURL.redirectTo.calledOnce);
 });
 
 test("tracks custom urls when opening in another window", function() {

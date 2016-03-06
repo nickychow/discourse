@@ -3,23 +3,6 @@ import { popupAjaxError } from 'discourse/lib/ajax-error';
 
 export default RestModel.extend({
 
-  // Description for the action
-  description: function() {
-    const action = this.get('actionType.name_key');
-    if (this.get('acted')) {
-      if (this.get('count') <= 1) {
-        return I18n.t('post.actions.by_you.' + action);
-      } else {
-        return I18n.t('post.actions.by_you_and_others.' + action, { count: this.get('count') - 1 });
-      }
-    } else {
-      return I18n.t('post.actions.by_others.' + action, { count: this.get('count') });
-    }
-  }.property('count', 'acted', 'actionType'),
-
-  usersCollapsed: Em.computed.not('usersExpanded'),
-  usersExpanded: Em.computed.gt('users.length', 0),
-
   canToggle: function() {
     return this.get('can_undo') || this.get('can_act');
   }.property('can_undo', 'can_act'),
@@ -32,22 +15,27 @@ export default RestModel.extend({
       can_act: true,
       can_undo: false
     });
-
-    if (this.get('usersExpanded')) {
-      this.get('users').removeObject(Discourse.User.current());
-    }
   },
 
-  toggle: function(post) {
+  togglePromise(post) {
+    if (!this.get('acted')) {
+      return this.act(post).then(() => true);
+    }
+    return this.undo(post).then(() => false);
+  },
+
+  toggle(post) {
     if (!this.get('acted')) {
       this.act(post);
+      return true;
     } else {
       this.undo(post);
+      return false;
     }
   },
 
   // Perform this action
-  act: function(post, opts) {
+  act(post, opts) {
 
     if (!opts) opts = {};
 
@@ -66,14 +54,8 @@ export default RestModel.extend({
       this.set('can_defer_flags',false);
     }
 
-    // Add ourselves to the users who liked it if present
-    if (this.get('usersExpanded')) {
-      this.get('users').addObject(Discourse.User.current());
-    }
-
     // Create our post action
     const self = this;
-
     return Discourse.ajax("/post_actions", {
       type: 'POST',
       data: {
@@ -94,50 +76,20 @@ export default RestModel.extend({
   },
 
   // Undo this action
-  undo: function(post) {
+  undo(post) {
     this.removeAction(post);
 
     // Remove our post action
     return Discourse.ajax("/post_actions/" + post.get('id'), {
       type: 'DELETE',
-      data: {
-        post_action_type_id: this.get('id')
-      }
-    }).then(function(result) {
-      return post.updateActionsSummary(result);
-    });
+      data: { post_action_type_id: this.get('id') }
+    }).then(result => post.updateActionsSummary(result));
   },
 
-  deferFlags: function(post) {
-    const self = this;
+  deferFlags(post) {
     return Discourse.ajax("/post_actions/defer_flags", {
       type: "POST",
-      data: {
-        post_action_type_id: this.get("id"),
-        id: post.get('id')
-      }
-    }).then(function () {
-      self.set("count", 0);
-    });
-  },
-
-  loadUsers: function(post) {
-    const self = this;
-    Discourse.ajax("/post_actions/users", {
-      data: {
-        id: post.get('id'),
-        post_action_type_id: this.get('id')
-      }
-    }).then(function (result) {
-      const users = [];
-      self.set('users', users);
-      result.forEach(function(user) {
-        if (user.id === Discourse.User.currentProp('id')) {
-          users.pushObject(Discourse.User.current());
-        } else {
-          users.pushObject(Discourse.User.create(user));
-        }
-      });
-    });
+      data: { post_action_type_id: this.get("id"), id: post.get('id') }
+    }).then(() => this.set('count', 0));
   }
 });

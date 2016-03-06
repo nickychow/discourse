@@ -5,7 +5,7 @@
 class PostDestroyer
 
   def self.destroy_old_hidden_posts
-    Post.where(deleted_at: nil)
+    Post.where(deleted_at: nil, hidden: true)
         .where("hidden_at < ?", 30.days.ago)
         .find_each do |post|
         PostDestroyer.new(Discourse.system_user, post).destroy
@@ -58,6 +58,7 @@ class PostDestroyer
     topic = Topic.with_deleted.find @post.topic_id
     topic.recover! if @post.is_first_post?
     topic.update_statistics
+    recover_user_actions
     DiscourseEvent.trigger(:post_recovered, @post, @opts, @user)
   end
 
@@ -164,6 +165,11 @@ class PostDestroyer
       }
       UserAction.remove_action!(row)
     end
+  end
+
+  def recover_user_actions
+    # TODO: Use a trash concept for `user_actions` to avoid churn and simplify this?
+    UserActionObserver.log_post(@post)
   end
 
   def remove_associated_replies
