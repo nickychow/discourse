@@ -46,6 +46,9 @@ class Category < ActiveRecord::Base
 
   after_update :rename_category_definition, if: :name_changed?
 
+  after_create :delete_category_permalink
+  after_update :create_category_permalink, if: :slug_changed?
+
   after_save :publish_discourse_stylesheet
 
   has_one :category_search_data
@@ -90,7 +93,7 @@ class Category < ActiveRecord::Base
   end
 
   def self.scoped_to_permissions(guardian, permission_types)
-    if guardian && guardian.is_staff?
+    if guardian && guardian.is_admin?
       all
     elsif !guardian || guardian.anonymous?
       if permission_types.include?(:readonly)
@@ -316,8 +319,12 @@ SQL
   def email_in_validator
     return if self.email_in.blank?
     email_in.split("|").each do |email|
-      unless Email.is_valid?(email)
-        self.errors.add(:base, I18n.t('category.errors.invalid_email_in', email_in: email))
+      if !Email.is_valid?(email)
+        self.errors.add(:base, I18n.t('category.errors.invalid_email_in', email: email))
+      elsif group = Group.find_by_email(email)
+        self.errors.add(:base, I18n.t('category.errors.email_already_used_in_group', email: email, group_name: group.name))
+      elsif category = Category.where.not(id: self.id).find_by_email(email)
+        self.errors.add(:base, I18n.t('category.errors.email_already_used_in_category', email: email, category_name: category.name))
       end
     end
   end
@@ -391,7 +398,7 @@ SQL
   end
 
   def self.find_by_email(email)
-    self.where("email_in LIKE ?", "%#{Email.downcase(email)}%").first
+    self.where("string_to_array(email_in, '|') @> ARRAY[?]", Email.downcase(email)).first
   end
 
   def has_children?
@@ -443,8 +450,35 @@ SQL
     end
   end
 
+  def create_category_permalink
+    old_slug = changed_attributes["slug"]
+    if self.parent_category
+      Permalink.create(url: "c/#{self.parent_category.slug}/#{old_slug}", category_id: id)
+    else
+      Permalink.create(url: "c/#{old_slug}", category_id: id)
+    end
+  end
+
+  def delete_category_permalink
+    if self.parent_category
+      permalink = Permalink.find_by_url("c/#{self.parent_category.slug}/#{slug}")
+    else
+      permalink = Permalink.find_by_url("c/#{slug}")
+    end
+    permalink.destroy if permalink
+  end
+
   def publish_discourse_stylesheet
     DiscourseStylesheets.cache.clear
+  end
+
+  def self.find_by_slug(category_slug, parent_category_slug=nil)
+    if parent_category_slug
+      parent_category_id = self.where(slug: parent_category_slug, parent_category_id: nil).pluck(:id).first
+      self.where(slug: category_slug, parent_category_id: parent_category_id).first
+    else
+      self.where(slug: category_slug, parent_category_id: nil).first
+    end
   end
 end
 

@@ -578,6 +578,11 @@ describe TopicsController do
       expect(response.status).to eq(404)
     end
 
+    it 'returns a 404 for an ID that is larger than postgres limits' do
+      xhr :get, :show, topic_id: 50142173232201640412, slug: 'topic-that-is-made-up'
+      expect(response.status).to eq(404)
+    end
+
     context 'a topic with nil slug exists' do
       before do
         @nil_slug_topic = Fabricate(:topic)
@@ -805,6 +810,16 @@ describe TopicsController do
           expect(response.code.to_i).to be(403)
         end
       end
+    end
+  end
+
+  describe '#posts' do
+    let(:topic) { Fabricate(:post).topic }
+
+    it 'returns first posts of the topic' do
+      get :posts, topic_id: topic.id, format: :json
+      expect(response).to be_success
+      expect(response.content_type).to eq('application/json')
     end
   end
 
@@ -1220,4 +1235,63 @@ describe TopicsController do
       expect(response.headers['X-Robots-Tag']).to eq(nil)
     end
   end
+
+  context "convert_topic" do
+    it 'needs you to be logged in' do
+      expect { xhr :put, :convert_topic, id: 111, type: "private" }.to raise_error(Discourse::NotLoggedIn)
+    end
+
+    describe 'converting public topic to private message' do
+      let(:user) { Fabricate(:user) }
+      let(:topic) { Fabricate(:topic, user: user) }
+
+      it "raises an error when the user doesn't have permission to convert topic" do
+        log_in
+        xhr :put, :convert_topic, id: topic.id, type: "private"
+        expect(response).to be_forbidden
+      end
+
+      context "success" do
+        before do
+          admin = log_in(:admin)
+          Topic.any_instance.expects(:convert_to_private_message).with(admin).returns(topic)
+          xhr :put, :convert_topic, id: topic.id, type: "private"
+        end
+
+        it "returns success" do
+          expect(response).to be_success
+          result = ::JSON.parse(response.body)
+          expect(result['success']).to eq(true)
+          expect(result['url']).to be_present
+        end
+      end
+    end
+
+    describe 'converting private message to public topic' do
+      let(:user) { Fabricate(:user) }
+      let(:topic) { Fabricate(:topic, user: user) }
+
+      it "raises an error when the user doesn't have permission to convert topic" do
+        log_in
+        xhr :put, :convert_topic, id: topic.id, type: "public"
+        expect(response).to be_forbidden
+      end
+
+      context "success" do
+        before do
+          admin = log_in(:admin)
+          Topic.any_instance.expects(:convert_to_public_topic).with(admin).returns(topic)
+          xhr :put, :convert_topic, id: topic.id, type: "public"
+        end
+
+        it "returns success" do
+          expect(response).to be_success
+          result = ::JSON.parse(response.body)
+          expect(result['success']).to eq(true)
+          expect(result['url']).to be_present
+        end
+      end
+    end
+  end
+
 end

@@ -64,6 +64,9 @@ basic:
   allow_user_locale:
     client: true
     default: false
+  set_locale_from_accept_language_header:
+    default: false
+    validator: "AllowUserLocaleEnabledValidator"
   suggested_topics:
     client: true
     default: 5
@@ -105,7 +108,7 @@ basic:
   post_menu:
     client: true
     type: list
-    default: 'like-count|like|share|flag|edit|bookmark|wiki|delete|admin|reply'
+    default: 'like-count|like|share|flag|edit|bookmark|delete|admin|reply'
     choices:
      - like-count
      - like
@@ -116,11 +119,10 @@ basic:
      - bookmark
      - admin
      - reply
-     - wiki
   post_menu_hidden_items:
     client: true
     type: list
-    default: 'bookmark|edit|wiki|delete|admin'
+    default: 'flag|bookmark|edit|delete|admin'
     choices:
      - like
      - edit
@@ -130,7 +132,6 @@ basic:
      - bookmark
      - admin
      - reply
-     - wiki
   share_links:
     client: true
     type: list
@@ -230,10 +231,19 @@ login:
     default: false
   twitter_consumer_key:
     default: ''
-    regex: "^[a-zA-Z0-9_+-]+$"
+    regex: "^[\\w+-]+$"
   twitter_consumer_secret:
     default: ''
-    regex: "^[a-zA-Z0-9_+-]+$"
+    regex: "^[\\w+-]+$"
+  enable_instagram_logins:
+    client: true
+    default: false
+  instagram_consumer_key:
+    default: ''
+    regex: "^[a-z0-9]+$"
+  instagram_consumer_secret:
+    default: ''
+    regex: "^[a-z0-9]+$"
   enable_facebook_logins:
     client: true
     default: false
@@ -256,7 +266,10 @@ login:
     client: true
     default: false
   enable_sso_provider: false
-  sso_url: ''
+  verbose_sso_logging: false
+  sso_url:
+    default: ''
+    regex: '^https?:\/\/.+[^\/]$'
   sso_secret: ''
   sso_overrides_email: false
   sso_overrides_username: false
@@ -394,6 +407,7 @@ posting:
   min_private_message_title_length:
     client: true
     default: 2
+    min: 1
   allow_uncategorized_topics:
     client: true
     default: true
@@ -492,6 +506,8 @@ posting:
   notify_about_queued_posts_after:
     default: 24
     min: 0
+  auto_close_messages_post_count: 500
+  auto_close_topics_post_count: 10000
 
 email:
   email_time_window_mins:
@@ -502,6 +518,9 @@ email:
   digest_min_excerpt_length: 100
   digest_topics: 20
   delete_digest_email_after_days: 365
+  digest_suppress_categories:
+    type: category_list
+    default: ''
   disable_digest_emails:
     default: false
     client: true
@@ -513,6 +532,8 @@ email:
   reply_by_email_address:
     default: ''
     validator: "ReplyByEmailAddressValidator"
+  manual_polling_enabled:
+    default: false
   pop3_polling_enabled:
     default: false
     validator: "POP3PollingEnabledSettingValidator"
@@ -545,10 +566,29 @@ email:
   delete_email_logs_after_days:
     default: 365
     min: 0
+  max_emails_per_day_per_user: 100
+  enable_staged_users: true
+  maximum_staged_users_per_email: 10
+  auto_generated_whitelist:
+    default: ''
+    type: list
+  block_auto_generated_emails: true
+  bounce_score_threshold:
+    client: true
+    default: 4
+    min: 1
+  ignore_by_title:
+    type: list
+    default: ''
+
 
 files:
-  max_image_size_kb: 3072
-  max_attachment_size_kb: 3072
+  max_image_size_kb:
+    client: true
+    default: 3072
+  max_attachment_size_kb:
+    client: true
+    default: 3072
   authorized_extensions:
     client: true
     default: 'jpg|jpeg|png|gif'
@@ -590,7 +630,7 @@ files:
     enum: 'S3RegionSiteSetting'
   s3_upload_bucket:
     default: ''
-    regex: '^[^A-Z_.]+$' # can't use '.' when using HTTPS
+    regex: "^[a-z0-9-]+$" # can't use '.' when using HTTPS
   s3_cdn_url:
     default: ''
     regex: '^https?:\/\/.+[^\/]$'
@@ -722,7 +762,7 @@ spam:
   num_flags_to_block_new_user: 3
   num_users_to_block_new_user: 3
   notify_mods_when_user_blocked: false
-  flag_sockpuppets: true
+  flag_sockpuppets: false
   newuser_spam_host_threshold: 3
   white_listed_spam_host_domains:
     default: ''
@@ -895,7 +935,7 @@ backups:
     shadowed_by_global: true
   s3_backup_bucket:
     default: ''
-    regex: "^[^A-Z_.]+$" # can't use '.' when using HTTPS
+    regex: "^[a-z0-9-]+$" # can't use '.' when using HTTPS
     shadowed_by_global: true
   s3_disable_cleanup:
     default: false
@@ -1059,6 +1099,17 @@ uncategorized:
     default: -1
     hidden: true
 
+  bootstrap_mode_min_users:
+    default: 50
+    client: true
+    min: 0
+    max: 5000
+
+  bootstrap_mode_enabled:
+    default: false
+    client: true
+    hidden: true
+
   automatically_unpin_topics:
     default: true
     client: true
@@ -1067,13 +1118,22 @@ uncategorized:
     default: 500
     client: true
 
+  topic_page_title_includes_category: true
+
 user_preferences:
   default_email_digest_frequency:
     enum: 'DigestEmailSiteSetting'
     default: 10080
+  default_include_tl0_in_digests: false
   default_email_private_messages: true
   default_email_direct: true
   default_email_mailing_list_mode: false
+  default_email_mailing_list_mode_frequency:
+    enum: 'MailingListModeSiteSetting'
+    default: 1
+  disable_mailing_list_mode:
+    default: false
+    client: true
   default_email_always: false
   default_email_previous_replies:
     enum: 'PreviousRepliesSiteSetting'
@@ -1109,3 +1169,56 @@ user_preferences:
   default_categories_muted:
     type: category_list
     default: ''
+
+tags:
+  tagging_enabled:
+    client: true
+    default: false
+    refresh: true
+  tag_style:
+    client: true
+    type: enum
+    default: 'simple'
+    choices:
+     - simple
+     - bullet
+     - box
+    preview: '<div class="discourse-tags"><span class="discourse-tag {{value}}">tag1</span><span class="discourse-tag {{value}}">tag2</span></div>'
+  max_tags_per_topic:
+    default: 5
+    client: true
+  max_tag_length:
+    default: 20
+    client: true
+  min_trust_to_create_tag:
+    default: 3
+    enum: 'TrustLevelSetting'
+  min_trust_level_to_tag_topics:
+    default: 0
+    enum: 'TrustLevelSetting'
+    client: true
+  max_tag_search_results:
+    client: true
+    default: 5
+    min: 1
+  show_filter_by_tag:
+    client: true
+    default: false
+    refresh: true
+  max_tags_in_filter_list:
+    default: 30
+    min: 1
+    refresh: true
+  tags_sort_alphabetically:
+    client: true
+    default: false
+    refresh: true
+  staff_tags:
+    type: list
+    client: true
+    default: ''
+  suppress_overlapping_tags_in_list:
+    default: false
+    client: true
+  remove_muted_tags_from_latest:
+    default: false

@@ -9,6 +9,7 @@ class UserUpdater
   OPTION_ATTR = [
     :email_always,
     :mailing_list_mode,
+    :mailing_list_mode_frequency,
     :email_digests,
     :email_direct,
     :email_private_messages,
@@ -23,7 +24,8 @@ class UserUpdater
     :auto_track_topics_after_msecs,
     :email_previous_replies,
     :email_in_reply_to,
-    :like_notification_frequency
+    :like_notification_frequency,
+    :include_tl0_in_digests
   ]
 
   def initialize(actor, user)
@@ -33,7 +35,7 @@ class UserUpdater
 
   def update(attributes = {})
     user_profile = user.user_profile
-    user_profile.location = attributes[:location]
+    user_profile.location = attributes.fetch(:location) { user_profile.location }
     user_profile.dismissed_banner_key = attributes[:dismissed_banner_key] if attributes[:dismissed_banner_key].present?
     user_profile.website = format_url(attributes.fetch(:website) { user_profile.website })
     user_profile.bio_raw = attributes.fetch(:bio_raw) { user_profile.bio_raw }

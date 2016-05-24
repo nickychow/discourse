@@ -68,6 +68,7 @@ class Auth::DefaultCurrentUserProvider
     end
     cookies.permanent[TOKEN_COOKIE] = { value: user.auth_token, httponly: true }
     make_developer_admin(user)
+    enable_bootstrap_mode(user)
     @env[CURRENT_USER_KEY] = user
   end
 
@@ -81,10 +82,20 @@ class Auth::DefaultCurrentUserProvider
     end
   end
 
+  def enable_bootstrap_mode(user)
+    Jobs.enqueue(:enable_bootstrap_mode, user_id: user.id) if user.admin && user.last_seen_at.nil? && !SiteSetting.bootstrap_mode_enabled && user.is_singular_admin?
+  end
+
   def log_off_user(session, cookies)
     if SiteSetting.log_out_strict && (user = current_user)
       user.auth_token = nil
       user.save!
+
+      if user.admin && defined?(Rack::MiniProfiler)
+        # clear the profiling cookie to keep stuff tidy
+        cookies["__profilin"] = nil
+      end
+
       MessageBus.publish "/logout", user.id, user_ids: [user.id]
     end
     cookies[TOKEN_COOKIE] = nil

@@ -2,6 +2,7 @@ class UserOptionSerializer < ApplicationSerializer
   attributes :user_id,
              :email_always,
              :mailing_list_mode,
+             :mailing_list_mode_frequency,
              :email_digests,
              :email_private_messages,
              :email_direct,
@@ -16,7 +17,8 @@ class UserOptionSerializer < ApplicationSerializer
              :new_topic_duration_minutes,
              :email_previous_replies,
              :email_in_reply_to,
-             :like_notification_frequency
+             :like_notification_frequency,
+             :include_tl0_in_digests
 
 
   def include_edit_history_public?

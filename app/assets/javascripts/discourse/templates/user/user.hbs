@@ -1,6 +1,6 @@
 <div class="container{{if viewingSelf ' viewing-self'}}">
   <section class='user-main'>
-    <section {{bind-attr class="collapsedInfo :about model.profileBackground:has-background:no-background"}}  style={{model.profileBackground}}>
+    <section class="{{if collapsedInfo 'collapsed-info'}} about {{if model.profileBackground 'has-background' 'no-background'}}"  style={{model.profileBackground}}>
     {{#unless collapsedInfo}}
     <div class='staff-counters'>
       {{#if model.number_of_flags_given}}
@@ -46,11 +46,14 @@
               {{#if currentUser.staff}}
                 <li><a href={{model.adminPath}} class="btn">{{fa-icon "wrench"}}{{i18n 'admin.user.show_admin_profile'}}</a></li>
               {{/if}}
+              {{plugin-outlet "user-profile-controls" tagName="li"}}
+
               {{#if collapsedInfo}}
               {{#if viewingSelf}}
               <li><a {{action "expandProfile"}} href class="btn">{{fa-icon "angle-double-down"}}{{i18n 'user.expand_profile'}}</a></li>
               {{/if}}
               {{/if}}
+
             </ul>
           </section>
 
@@ -85,14 +88,16 @@
 
             {{#if publicUserFields}}
               <div class="public-user-fields">
-                {{#each uf in publicUserFields}}
+                {{#each publicUserFields as |uf|}}
                   {{#if uf.value}}
-                    <div class="public-user-field">
+                    <div class="public-user-field {{uf.field.dasherized_name}}">
                       <span class="user-field-name">{{uf.field.name}}</span>:
                       <span class="user-field-value">{{uf.value}}</span>
                     </div>
                   {{/if}}
                 {{/each}}
+
+                {{plugin-outlet "user-profile-public-fields"}}
               </div>
             {{/if}}
 
@@ -134,7 +139,7 @@
           {{#if model.displayGroups}}
             <dt>{{i18n 'groups.title' count=model.displayGroups.length}}</dt>
             <dd class='groups'>
-              {{#each group in model.displayGroups}}
+              {{#each model.displayGroups as |group|}}
                 <span>{{#link-to 'group' group class="group-link"}}{{group.name}}{{/link-to}}</span>
               {{/each}}
             </dd>

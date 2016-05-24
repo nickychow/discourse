@@ -57,11 +57,39 @@ export default Ember.Controller.extend({
   lastValidatedAt: null,
   isUploading: false,
   topic: null,
-  showToolbar: false,
+  showToolbar: Em.computed({
+    get(){
+      const keyValueStore = this.container.lookup('key-value-store:main');
+      const storedVal = keyValueStore.get("toolbar-enabled");
+      if (this._toolbarEnabled === undefined && storedVal === undefined) {
+        // iPhone 6 is 375, anything narrower and toolbar should
+        // be default disabled.
+        // That said we should remember the state
+        this._toolbarEnabled = $(window).width() > 370;
+      }
+      return this._toolbarEnabled || storedVal === "true";
+    },
+    set(key, val){
+      const keyValueStore = this.container.lookup('key-value-store:main');
+      this._toolbarEnabled = val;
+      keyValueStore.set({key: "toolbar-enabled", value: val ? "true" : "false"});
+      return val;
+    }
+  }),
+
+  topicModel: Ember.computed.alias('controllers.topic.model'),
 
   _initializeSimilar: function() {
     this.set('similarTopics', []);
   }.on('init'),
+
+  @computed('model.canEditTitle', 'model.creatingPrivateMessage')
+  canEditTags(canEditTitle, creatingPrivateMessage) {
+    return !this.site.mobileView &&
+            this.site.get('can_tag_topics') &&
+            canEditTitle &&
+            !creatingPrivateMessage;
+  },
 
   @computed('model.action')
   canWhisper(action) {
@@ -226,7 +254,7 @@ export default Ember.Controller.extend({
     // if we are replying to a topic AND not on the topic pop the window up
     if (!force && composer.get('replyingToTopic')) {
 
-      const currentTopic = this.get('controllers.topic.model');
+      const currentTopic = this.get('topicModel');
       if (!currentTopic || currentTopic.get('id') !== composer.get('topic.id'))
       {
         const message = I18n.t("composer.posting_not_on_topic");
@@ -320,7 +348,7 @@ export default Ember.Controller.extend({
     });
 
     if (this.get('controllers.application.currentRouteName').split('.')[0] === 'topic' &&
-        composer.get('topic.id') === this.get('controllers.topic.model.id')) {
+        composer.get('topic.id') === this.get('topicModel.id')) {
       staged = composer.get('stagedPost');
     }
 
@@ -368,7 +396,7 @@ export default Ember.Controller.extend({
     let message = this.get('similarTopicsMessage');
     if (!message) {
       message = Discourse.ComposerMessage.create({
-        templateName: 'composer/similar_topics',
+        templateName: 'composer/similar-topics',
         extraClass: 'similar-topics'
       });
       this.set('similarTopicsMessage', message);

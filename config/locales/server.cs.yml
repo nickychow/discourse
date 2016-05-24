@@ -584,7 +584,6 @@ cs:
     use_https: "Should the full url for the site (Discourse.base_url) be http or https?"
     enable_long_polling: "'Message bus' smí používat dlouhé výzvy"
     anon_polling_interval: "Jak často se mají zasílat výzvy anonymním uživatelům v milisekundách"
-    flags_required_to_hide_post: "Počet nahlášení, po kterých je příspěvek automaticky skryt a uživateli je zaslána soukromá zpráva (0 znamená nikdy)"
     max_topics_in_first_day: "The maximum number of topics a user is allowed to create in their first day on the site"
     max_replies_in_first_day: "The maximum number of replies a user is allowed to create in their first day on the site"
     notify_mods_when_user_blocked: "If a user is automatically blocked, send a message to all moderators."
@@ -602,7 +601,6 @@ cs:
     invite_expiry_days: "Platnost uživatelských pozvánek ve dnech"
     min_password_length: "Minimální povolená délka hesla."
     block_common_passwords: "Nepovolit heslo pokud je mezi 10 000 nejběžnějšími."
-    sso_url: "URL pro single sign on"
     enable_yahoo_logins: "Povolit přihlašování přes Yahoo"
     google_oauth2_client_id: "Client ID vaší Google aplikace."
     google_oauth2_client_secret: "Client secret vaší Google aplikace."
@@ -739,34 +737,6 @@ cs:
     posted_by: "Zaslal uživatel %{username} dne %{post_date}"
     user_invited_to_private_message_pm:
       subject_template: "[%{site_name}] %{username} Vás pozval do konverzace '%{topic_title}'"
-      text_body_template: |2
-
-        %{username} Vás pozval do konverzace
-
-        > **%{topic_title}**
-        >
-        > %{topic_excerpt}
-
-        na
-
-        > %{site_title} -- %{site_description}
-
-        Prosíme klikněte na tento odkaz pro zobrazení konverzace: %{base_url}%{url}
-    user_invited_to_topic:
-      subject_template: "[%{site_name}] %{username} Vás pozval do tématu '%{topic_title}'"
-      text_body_template: |2
-
-        %{username} Vás pozval do konverzace
-
-        > **%{topic_title}**
-        >
-        > %{topic_excerpt}
-
-        na
-
-        > %{site_title} -- %{site_description}
-
-        Prosíme klikněte na tento odkaz pro zobrazení konverzace: %{base_url}%{url}
     user_replied:
       subject_template: "[%{site_name}] %{username} vás citoval v '%{topic_title}'"
     user_quoted:
@@ -805,12 +775,6 @@ cs:
         %{base_url}/users/password-reset/%{email_token}
     admin_login:
       subject_template: "[%{site_name}] Přihlášení"
-    authorize_email:
-      subject_template: "[%{site_name}] Potvrďte vaši novou emailovou adresu"
-      text_body_template: |
-        Potvrďte vaši novou emailovou adresu pro %{site_name} kliknutím na následující odkaz:
-
-        %{base_url}/users/authorize-email/%{email_token}
     signup_after_approval:
       subject_template: "Byli jste schváleni na %{site_name}!"
     signup:
@@ -822,7 +786,6 @@ cs:
 
         Pokud tento odkaz nefunguje, zkuste ho zkopírovat a vložit přes schránku do adresního řádku vaše webového prohlížeče.
   page_not_found:
-    title: "Stránka, kterou žádáte, na tomto diskuzním fóru neexistuje. Možná vám můžeme pomoci ji najít, nebo poradit jiné téma, které se vám může líbit:"
     popular_topics: "Populární"
     recent_topics: "Nedávné"
     see_more: "Více"

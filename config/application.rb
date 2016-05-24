@@ -144,9 +144,11 @@ module Discourse
 
     # Our templates shouldn't start with 'discourse/templates'
     config.handlebars.templates_root = 'discourse/templates'
+    config.handlebars.raw_template_namespace = "Ember.TEMPLATES"
 
     require 'discourse_redis'
     require 'logster/redis_store'
+    require 'freedom_patches/redis'
     # Use redis for our cache
     config.cache_store = DiscourseRedis.new_redis_store
     $redis = DiscourseRedis.new

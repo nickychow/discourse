@@ -12,11 +12,10 @@ module FileStore
     def remove_file(url)
       return unless is_relative?(url)
       path = public_dir + url
+      return if !File.exists?(path)
       tombstone = public_dir + url.sub("/uploads/", "/tombstone/")
       FileUtils.mkdir_p(Pathname.new(tombstone).dirname)
       FileUtils.move(path, tombstone, :force => true)
-    rescue Errno::ENOENT
-      # don't care if the file isn't there
     end
 
     def has_been_uploaded?(url)
@@ -34,8 +33,12 @@ module FileStore
       "#{Discourse.asset_host}#{relative_base_url}"
     end
 
-    def relative_base_url
+    def upload_path
       "/uploads/#{RailsMultisite::ConnectionManagement.current_db}"
+    end
+
+    def relative_base_url
+      "#{Discourse.base_uri}#{upload_path}"
     end
 
     def external?
@@ -57,7 +60,7 @@ module FileStore
     end
 
     def get_path_for(type, upload_id, sha, extension)
-      "#{relative_base_url}/#{super(type, upload_id, sha, extension)}"
+      "#{upload_path}/#{super(type, upload_id, sha, extension)}"
     end
 
     def copy_file(file, path)

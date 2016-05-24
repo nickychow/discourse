@@ -5,15 +5,18 @@ import { addButton } from 'discourse/widgets/post-menu';
 import { includeAttributes } from 'discourse/lib/transform-post';
 import { addToolbarCallback } from 'discourse/components/d-editor';
 import { addWidgetCleanCallback } from 'discourse/components/mount-widget';
-import { decorateWidget, changeSetting } from 'discourse/widgets/widget';
+import { createWidget, decorateWidget, changeSetting } from 'discourse/widgets/widget';
 import { onPageChange } from 'discourse/lib/page-tracker';
 import { preventCloak } from 'discourse/widgets/post-stream';
+import { h } from 'virtual-dom';
+import { addFlagProperty } from 'discourse/components/site-header';
 
 class PluginApi {
   constructor(version, container) {
     this.version = version;
     this.container = container;
     this._currentUser = container.lookup('current-user:main');
+    this.h = h;
   }
 
   /**
@@ -46,7 +49,7 @@ class PluginApi {
 
     if (!opts.onlyStream) {
       decorate(ComposerEditor, 'previewRefreshed', callback);
-      decorate(this.container.lookupFactory('view:user-stream'), 'didInsertElement', callback);
+      decorate(this.container.lookupFactory('component:user-stream'), 'didInsertElement', callback);
     }
   }
 
@@ -75,10 +78,13 @@ class PluginApi {
    * ```
    **/
   addPosterIcon(cb) {
-    decorateWidget('poster-name:after', dec => {
-      const attrs = dec.attrs;
+    const site = this.container.lookup('site:main');
+    const loc = site && site.mobileView ? 'before' : 'after';
 
+    decorateWidget(`poster-name:${loc}`, dec => {
+      const attrs = dec.attrs;
       const result = cb(attrs.userCustomFields || {}, attrs);
+
       if (result) {
         let iconBody;
 
@@ -89,6 +95,8 @@ class PluginApi {
             const src = Discourse.Emoji.urlFor(emoji);
             return dec.h('img', { className: 'emoji', attributes: { src } });
           });
+
+          iconBody = result.emoji.split('|').map(name => dec.attach('emoji', { name }));
         }
 
         if (result.text) {
@@ -100,7 +108,7 @@ class PluginApi {
         }
 
 
-        return dec.h('span',
+        return dec.h('span.poster-icon',
                      { className: result.className, attributes: { title: result.title } },
                      iconBody);
       }
@@ -268,11 +276,46 @@ class PluginApi {
   preventCloak(postId) {
     preventCloak(postId);
   }
+
+  /**
+   * Exposes the widget creating ability to plugins. Plugins can
+   * register their own plugins and attach them with decorators.
+   * See `createWidget` in `discourse/widgets/widget` for more info.
+   **/
+  createWidget(name, args) {
+    return createWidget(name, args);
+  }
+
+  /**
+   * Adds a property that can be summed for calculating the flag counter
+   **/
+  addFlagProperty(property) {
+    return addFlagProperty(property);
+  }
+
+  /**
+   * Adds a pluralization to the store
+   *
+   * Example:
+   *
+   * ```javascript
+   * api.addStorePluralization('mouse', 'mice');
+   * ```
+   *
+   * ```javascript
+   * this.store.find('mouse');
+   * ```
+   * will issue a request to `/mice.json`
+   **/
+  addStorePluralization(thing, plural) {
+    this.container.lookup("store:main").addPluralization(thing, plural);
+  }
 }
 
 let _pluginv01;
 function getPluginApi(version) {
-  if (version === "0.1") {
+  version = parseFloat(version);
+  if (version <= 0.4) {
     if (!_pluginv01) {
       _pluginv01 = new PluginApi(version, Discourse.__container__);
     }
@@ -283,7 +326,7 @@ function getPluginApi(version) {
 }
 
 /**
- * withPluginApi(version, apiCode, noApi)
+ * withPluginApi(version, apiCodeCallback, opts)
  *
  * Helper to version our client side plugin API. Pass the version of the API that your
  * plugin is coded against. If that API is available, the `apiCodeCallback` function will

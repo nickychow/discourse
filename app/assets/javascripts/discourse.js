@@ -6,9 +6,12 @@ define('ember', ['exports'], function(__exports__) {
   __exports__.default = Ember;
 });
 
-window.Discourse = Ember.Application.createWithMixins(Discourse.Ajax, {
+var _pluginCallbacks = [];
+
+window.Discourse = Ember.Application.extend(Discourse.Ajax, {
   rootElement: '#main',
   _docTitle: document.title,
+  __TAGS_INCLUDED__: true,
 
   getURL: function(url) {
     if (!url) return url;
@@ -104,7 +107,7 @@ window.Discourse = Ember.Application.createWithMixins(Discourse.Ajax, {
 
     $('noscript').remove();
 
-    Ember.keys(requirejs._eak_seen).forEach(function(key) {
+    Object.keys(requirejs._eak_seen).forEach(function(key) {
       if (/\/pre\-initializers\//.test(key)) {
         var module = require(key, null, null, true);
         if (!module) { throw new Error(key + ' must export an initializer.'); }
@@ -112,7 +115,7 @@ window.Discourse = Ember.Application.createWithMixins(Discourse.Ajax, {
       }
     });
 
-    Ember.keys(requirejs._eak_seen).forEach(function(key) {
+    Object.keys(requirejs._eak_seen).forEach(function(key) {
       if (/\/initializers\//.test(key)) {
         var module = require(key, null, null, true);
         if (!module) { throw new Error(key + ' must export an initializer.'); }
@@ -127,6 +130,18 @@ window.Discourse = Ember.Application.createWithMixins(Discourse.Ajax, {
       }
     });
 
+    // Plugins that are registered via `<script>` tags.
+    var withPluginApi = require('discourse/lib/plugin-api').withPluginApi;
+    var initCount = 0;
+    _pluginCallbacks.forEach(function(cb) {
+      Discourse.instanceInitializer({
+        name: "_discourse_plugin_" + (++initCount),
+        after: 'inject-objects',
+        initialize: function() {
+          withPluginApi(cb.version, cb.code);
+        }
+      });
+    });
   },
 
   requiresRefresh: function(){
@@ -134,6 +149,9 @@ window.Discourse = Ember.Application.createWithMixins(Discourse.Ajax, {
     return desired && Discourse.get("currentAssetVersion") !== desired;
   }.property("currentAssetVersion", "desiredAssetVersion"),
 
+  _registerPluginCode: function(version, code) {
+    _pluginCallbacks.push({ version: version, code: code });
+  },
 
   assetVersion: Ember.computed({
     get: function() {
@@ -150,7 +168,7 @@ window.Discourse = Ember.Application.createWithMixins(Discourse.Ajax, {
       return this.get("currentAssetVersion");
     }
   })
-});
+}).create();
 
 function RemovedObject(name) {
   this._removedName = name;

@@ -95,7 +95,8 @@ class UserSerializer < BasicUserSerializer
                      :has_title_badges,
                      :card_image_badge,
                      :card_image_badge_id,
-                     :muted_usernames
+                     :muted_usernames,
+                     :mailing_list_posts_per_day
 
   untrusted_attributes :bio_raw,
                        :bio_cooked,
@@ -108,6 +109,11 @@ class UserSerializer < BasicUserSerializer
   ###
   ### ATTRIBUTES
   ###
+
+  def mailing_list_posts_per_day
+    val = Post.estimate_posts_per_day
+    [val,SiteSetting.max_emails_per_day_per_user].min
+  end
 
   def groups
     if scope.is_admin? || object.id == scope.user.try(:id)
@@ -138,19 +144,9 @@ class UserSerializer < BasicUserSerializer
   end
 
   def website_name
-    website_host = URI(website.to_s).host rescue nil
-    discourse_host = Discourse.current_hostname
-    return if website_host.nil?
-    if website_host == discourse_host
-      # example.com == example.com
-      website_host + URI(website.to_s).path
-    elsif (website_host.split('.').length == discourse_host.split('.').length) && discourse_host.split('.').length > 2
-      # www.example.com == forum.example.com
-      website_host.split('.')[1..-1].join('.') == discourse_host.split('.')[1..-1].join('.') ? website_host + URI(website.to_s).path : website_host
-    else
-      # example.com == forum.example.com
-      discourse_host.ends_with?("." << website_host) ? website_host + URI(website.to_s).path : website_host
-    end
+    uri = URI(website.to_s) rescue nil
+    return if uri.nil? || uri.host.nil?
+    uri.host.sub(/^www\./,'') + uri.path
   end
 
   def include_website_name
@@ -318,15 +314,10 @@ class UserSerializer < BasicUserSerializer
   end
 
   def custom_fields
-    fields = nil
+    fields = User.whitelisted_user_custom_fields(scope)
 
     if scope.can_edit?(object)
-      fields = DiscoursePluginRegistry.serialized_current_user_fields.to_a
-    end
-
-    if SiteSetting.public_user_custom_fields.present?
-      fields ||= []
-      fields += SiteSetting.public_user_custom_fields.split('|')
+      fields += DiscoursePluginRegistry.serialized_current_user_fields.to_a
     end
 
     if fields.present?

@@ -213,13 +213,14 @@ SQL
 
     return unless opts[:message] && [:notify_moderators, :notify_user, :spam].include?(post_action_type)
 
-    title = I18n.t("post_action_types.#{post_action_type}.email_title", title: post.topic.title)
-    body = I18n.t("post_action_types.#{post_action_type}.email_body", message: opts[:message], link: "#{Discourse.base_url}#{post.url}")
-
+    title = I18n.t("post_action_types.#{post_action_type}.email_title", title: post.topic.title, locale: SiteSetting.default_locale)
+    body = I18n.t("post_action_types.#{post_action_type}.email_body", message: opts[:message], link: "#{Discourse.base_url}#{post.url}", locale: SiteSetting.default_locale)
+    warning = opts[:is_warning] if opts[:is_warning].present?
     title = title.truncate(255, separator: /\s/)
 
     opts = {
       archetype: Archetype.private_message,
+      is_warning: warning,
       title: title,
       raw: body
     }
@@ -286,12 +287,11 @@ SQL
         BadgeGranter.queue_badge_grant(Badge::Trigger::PostAction, post_action: post_action)
       end
     end
+    GivenDailyLike.increment_for(user.id)
 
     # agree with other flags
     if staff_took_action
       PostAction.agree_flags!(post, user)
-
-      # update counters
       post_action.try(:update_counters)
     end
 
@@ -311,6 +311,7 @@ SQL
     if action = finder.first
       action.remove_act!(user)
       action.post.unhide! if action.staff_took_action
+      GivenDailyLike.decrement_for(user.id)
     end
   end
 

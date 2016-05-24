@@ -24,6 +24,7 @@ module ImportScripts::PhpBB3
     attr_reader :original_site_prefix
     attr_reader :new_site_prefix
     attr_reader :base_dir
+    attr_reader :permalinks
 
     attr_reader :username_as_name
     attr_reader :emojis
@@ -50,6 +51,7 @@ module ImportScripts::PhpBB3
       @original_site_prefix = import_settings['site_prefix']['original']
       @new_site_prefix = import_settings['site_prefix']['new']
       @base_dir = import_settings['phpbb_base_dir']
+      @permalinks = PermalinkSettings.new(import_settings['permalinks'])
 
       @username_as_name = import_settings['username_as_name']
       @emojis = import_settings.fetch('emojis', [])
@@ -61,6 +63,7 @@ module ImportScripts::PhpBB3
   class DatabaseSettings
     attr_reader :type
     attr_reader :host
+    attr_reader :port
     attr_reader :username
     attr_reader :password
     attr_reader :schema
@@ -70,11 +73,24 @@ module ImportScripts::PhpBB3
     def initialize(yaml)
       @type = yaml['type']
       @host = yaml['host']
+      @port = yaml['port']
       @username = yaml['username']
       @password = yaml['password']
       @schema = yaml['schema']
       @table_prefix = yaml['table_prefix']
       @batch_size = yaml['batch_size']
+    end
+  end
+
+  class PermalinkSettings
+    attr_reader :create_category_links
+    attr_reader :create_topic_links
+    attr_reader :create_post_links
+
+    def initialize(yaml)
+      @create_category_links = yaml['categories']
+      @create_topic_links = yaml['topics']
+      @create_post_links = yaml['posts']
     end
   end
 end

@@ -76,6 +76,69 @@ describe UserNotifications do
 
   end
 
+  describe '.mailing_list' do
+    subject { UserNotifications.mailing_list(user) }
+
+    context "without new posts" do
+      it "doesn't send the email" do
+        expect(subject.to).to be_blank
+      end
+    end
+
+    context "with new posts" do
+      let(:user) { Fabricate(:user) }
+      let(:topic) { Fabricate(:topic, user: user) }
+      let!(:new_post) { Fabricate(:post, topic: topic, created_at: 2.hours.ago, raw: "Feel the Bern") }
+      let!(:old_post) { Fabricate(:post, topic: topic, created_at: 25.hours.ago, raw: "Make America Great Again") }
+      let(:old_topic) { Fabricate(:topic, user: user, created_at: 10.days.ago) }
+      let(:new_post_in_old_topic) { Fabricate(:post, topic: old_topic, created_at: 2.hours.ago, raw: "Yes We Can") }
+      let(:stale_post) { Fabricate(:post, topic: old_topic, created_at: 2.days.ago, raw: "A New American Century") }
+
+      it "works" do
+        expect(subject.to).to eq([user.email])
+        expect(subject.subject).to be_present
+        expect(subject.from).to eq([SiteSetting.notification_email])
+        expect(subject.html_part.body.to_s).to include topic.title
+        expect(subject.text_part.body.to_s).to be_present
+      end
+
+      it "includes posts less than 24 hours old" do
+        expect(subject.html_part.body.to_s).to include new_post.cooked
+      end
+
+      it "does not include posts older than 24 hours old" do
+        expect(subject.html_part.body.to_s).to_not include old_post.cooked
+      end
+
+      it "includes topics created over 24 hours ago which have new posts" do
+        new_post_in_old_topic
+        expect(subject.html_part.body.to_s).to include old_topic.title
+        expect(subject.html_part.body.to_s).to include new_post_in_old_topic.cooked
+        expect(subject.html_part.body.to_s).to_not include stale_post.cooked
+      end
+
+      it "includes multiple topics" do
+        new_post_in_old_topic
+        expect(subject.html_part.body.to_s).to include topic.title
+        expect(subject.html_part.body.to_s).to include old_topic.title
+      end
+
+      it "does not include topics not updated for the past 24 hours" do
+        stale_post
+        expect(subject.html_part.body.to_s).to_not include old_topic.title
+        expect(subject.html_part.body.to_s).to_not include stale_post.cooked
+      end
+
+      it "includes email_prefix in email subject instead of site title" do
+        SiteSetting.email_prefix = "Try Discourse"
+        SiteSetting.title = "Discourse Meta"
+
+        expect(subject.subject).to match(/Try Discourse/)
+        expect(subject.subject).not_to match(/Discourse Meta/)
+      end
+    end
+  end
+
   describe '.digest' do
 
     subject { UserNotifications.digest(user) }
@@ -243,6 +306,31 @@ describe UserNotifications do
     end
   end
 
+
+  it 'adds a warning when mail limit is reached' do
+    SiteSetting.max_emails_per_day_per_user = 2
+    user = Fabricate(:user)
+    user.email_logs.create(email_type: 'blah', to_address: user.email, user_id: user.id, skipped: false)
+
+    post = Fabricate(:post)
+    reply = Fabricate(:post, topic_id: post.topic_id)
+
+    notification = Fabricate(:notification, topic_id: post.topic_id, post_number: reply.post_number,
+                             user: post.user, data: {original_username: 'bob'}.to_json)
+
+    mail = UserNotifications.user_replied(
+      user,
+      post: reply,
+      notification_type: notification.notification_type,
+      notification_data_hash: notification.data_hash
+    )
+
+    # WARNING: you reached the limit of 100 email notifications per day. Further emails will be suppressed.
+    # Consider watching less topics or disabling mailing list mode.
+    expect(mail.html_part.to_s).to match("WARNING: ")
+    expect(mail.body.to_s).to match("WARNING: ")
+  end
+
   def expects_build_with(condition)
     UserNotifications.any_instance.expects(:build_email).with(user.email, condition)
     mailer = UserNotifications.send(mail_type, user,
@@ -405,7 +493,8 @@ describe UserNotifications do
 
     context "user locale has been set" do
 
-      %w(signup signup_after_approval authorize_email forgot_password admin_login account_created).each do |mail_type|
+      %w(signup signup_after_approval confirm_old_email notify_old_email confirm_new_email
+         forgot_password admin_login account_created).each do |mail_type|
         include_examples "notification derived from template" do
           SiteSetting.default_locale = "en"
           let(:locale) { "fr" }
@@ -418,7 +507,8 @@ describe UserNotifications do
     end
 
     context "user locale has not been set" do
-      %w(signup signup_after_approval authorize_email forgot_password admin_login account_created).each do |mail_type|
+      %w(signup signup_after_approval notify_old_email confirm_old_email confirm_new_email
+         forgot_password admin_login account_created).each do |mail_type|
         include_examples "notification derived from template" do
           SiteSetting.default_locale = "en"
           let(:locale) { nil }
@@ -429,5 +519,20 @@ describe UserNotifications do
         end
       end
     end
+
+    context "user locale is an empty string" do
+      %w(signup signup_after_approval notify_old_email confirm_new_email confirm_old_email
+         forgot_password admin_login account_created).each do |mail_type|
+        include_examples "notification derived from template" do
+          SiteSetting.default_locale = "en"
+          let(:locale) { "" }
+          let(:mail_type) { mail_type }
+          it "sets the locale" do
+            expects_build_with(has_entry(:locale, nil))
+          end
+        end
+      end
+    end
+
   end
 end

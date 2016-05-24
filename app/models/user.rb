@@ -25,17 +25,18 @@ class User < ActiveRecord::Base
   has_many :user_badges, -> { where('user_badges.badge_id IN (SELECT id FROM badges WHERE enabled)') }, dependent: :destroy
   has_many :badges, through: :user_badges
   has_many :email_logs, dependent: :delete_all
+  has_many :incoming_emails, dependent: :delete_all
   has_many :post_timings
   has_many :topic_allowed_users, dependent: :destroy
   has_many :topics_allowed, through: :topic_allowed_users, source: :topic
   has_many :email_tokens, dependent: :destroy
-  has_many :views
   has_many :user_visits, dependent: :destroy
   has_many :invites, dependent: :destroy
   has_many :topic_links, dependent: :destroy
   has_many :uploads
   has_many :warnings
   has_many :user_archived_messages, dependent: :destroy
+  has_many :email_change_requests, dependent: :destroy
 
 
   has_one :user_option, dependent: :destroy
@@ -68,7 +69,7 @@ class User < ActiveRecord::Base
   before_validation :strip_downcase_email
 
   validates_presence_of :username
-  validate :username_validator
+  validate :username_validator, if: :username_changed?
   validates :email, presence: true, uniqueness: true
   validates :email, email: true, if: :email_changed?
   validate :password_validator
@@ -145,6 +146,33 @@ class User < ActiveRecord::Base
   def self.username_available?(username)
     lower = username.downcase
     User.where(username_lower: lower).blank? && !SiteSetting.reserved_usernames.split("|").include?(username)
+  end
+
+  def self.plugin_staff_user_custom_fields
+    @plugin_staff_user_custom_fields ||= {}
+  end
+
+  def self.register_plugin_staff_custom_field(custom_field_name, plugin)
+    plugin_staff_user_custom_fields[custom_field_name] = plugin
+  end
+
+  def self.whitelisted_user_custom_fields(guardian)
+    fields = []
+
+    if SiteSetting.public_user_custom_fields.present?
+      fields += SiteSetting.public_user_custom_fields.split('|')
+    end
+
+    if guardian.is_staff?
+      if SiteSetting.staff_user_custom_fields.present?
+        fields += SiteSetting.staff_user_custom_fields.split('|')
+      end
+      plugin_staff_user_custom_fields.each do |k, v|
+        fields << k if v.enabled?
+      end
+    end
+
+    fields.uniq
   end
 
   def effective_locale
@@ -448,6 +476,7 @@ class User < ActiveRecord::Base
     update_previous_visit(now)
     # using update_column to avoid the AR transaction
     update_column(:last_seen_at, now)
+    update_column(:first_seen_at, now) unless self.first_seen_at
   end
 
   def self.gravatar_template(email)
@@ -545,11 +574,11 @@ class User < ActiveRecord::Base
   end
 
   def posted_too_much_in_topic?(topic_id)
-
-    # Does not apply to staff, non-new members or your own topics
-    return false if staff? ||
-                    (trust_level != TrustLevel[0]) ||
-                    Topic.where(id: topic_id, user_id: id).exists?
+    # Does not apply to staff and non-new members...
+    return false if staff? || (trust_level != TrustLevel[0])
+    # ... your own topics or in private messages
+    topic = Topic.where(id: topic_id).first
+    return false if topic.try(:private_message?) || (topic.try(:user_id) == self.id)
 
     last_action_in_topic = UserAction.last_action_in_topic(id, topic_id)
     since_reply = Post.where(user_id: id, topic_id: topic_id)
@@ -634,19 +663,25 @@ class User < ActiveRecord::Base
 
   def featured_user_badges(limit=3)
     user_badges
+        .group(:badge_id)
+        .select(UserBadge.attribute_names.map { |x| "MAX(user_badges.#{x}) AS #{x}" },
+                'COUNT(*) AS "count"',
+                'MAX(badges.badge_type_id) AS badges_badge_type_id',
+                'MAX(badges.grant_count) AS badges_grant_count')
         .joins(:badge)
-        .order("CASE WHEN badges.id = (SELECT MAX(ub2.badge_id) FROM user_badges ub2
-                              WHERE ub2.badge_id IN (#{Badge.trust_level_badge_ids.join(",")}) AND
-                                    ub2.user_id = #{self.id}) THEN 1 ELSE 0 END DESC")
-        .order('badges.badge_type_id ASC, badges.grant_count ASC')
-        .includes(:user, :granted_by, badge: :badge_type)
-        .where("user_badges.id in (select min(u2.id)
-                  from user_badges u2 where u2.user_id = ? group by u2.badge_id)", id)
+        .order("CASE WHEN user_badges.badge_id = (
+                  SELECT MAX(ub2.badge_id)
+                    FROM user_badges ub2
+                   WHERE ub2.badge_id IN (#{Badge.trust_level_badge_ids.join(",")})
+                     AND ub2.user_id = #{self.id}
+                ) THEN 1 ELSE 0 END DESC")
+        .order('badges_badge_type_id ASC, badges_grant_count ASC')
+        .includes(:user, :granted_by, { badge: :badge_type }, { post: :topic })
         .limit(limit)
   end
 
   def self.count_by_signup_date(start_date, end_date, group_id=nil)
-    result = where('users.created_at >= ? and users.created_at <= ?', start_date, end_date)
+    result = where('users.created_at >= ? AND users.created_at <= ?', start_date, end_date)
 
     if group_id
       result = result.joins("INNER JOIN group_users ON group_users.user_id = users.id")
@@ -668,12 +703,16 @@ class User < ActiveRecord::Base
 
   # Flag all posts from a user as spam
   def flag_linked_posts_as_spam
-    admin = Discourse.system_user
+    disagreed_flag_post_ids = PostAction.where(post_action_type_id: PostActionType.types[:spam])
+                                        .where.not(disagreed_at: nil)
+                                        .pluck(:post_id)
 
-    disagreed_flag_post_ids = PostAction.where(post_action_type_id: PostActionType.types[:spam]).where.not(disagreed_at: nil).pluck(:post_id)
-    topic_links.includes(:post).where.not(post_id: disagreed_flag_post_ids).each do |tl|
+    topic_links.includes(:post)
+               .where.not(post_id: disagreed_flag_post_ids)
+               .each do |tl|
       begin
-        PostAction.act(admin, tl.post, PostActionType.types[:spam], message: I18n.t('flag_reason.spam_hosts'))
+        message = I18n.t('flag_reason.spam_hosts', domain: tl.domain)
+        PostAction.act(Discourse.system_user, tl.post, PostActionType.types[:spam], message: message)
       rescue PostAction::AlreadyActed
         # If the user has already acted, just ignore it
       end
@@ -720,7 +759,8 @@ class User < ActiveRecord::Base
     avatar = user_avatar || create_user_avatar
 
     if SiteSetting.automatically_download_gravatars? && !avatar.last_gravatar_download_attempt
-      Jobs.enqueue(:update_gravatar, user_id: self.id, avatar_id: avatar.id)
+      Jobs.cancel_scheduled_job(:update_gravatar, user_id: self.id, avatar_id: avatar.id)
+      Jobs.enqueue_in(1.second, :update_gravatar, user_id: self.id, avatar_id: avatar.id)
     end
 
     # mark all the user's quoted posts as "needing a rebake"
@@ -804,6 +844,10 @@ class User < ActiveRecord::Base
     SiteSetting.allow_anonymous_posting &&
       trust_level >= 1 &&
       custom_fields["master_id"].to_i > 0
+  end
+
+  def is_singular_admin?
+    User.where(admin: true).where.not(id: id).where.not(id: Discourse::SYSTEM_USER_ID).blank?
   end
 
   protected
@@ -895,7 +939,7 @@ class User < ActiveRecord::Base
 
   def send_approval_email
     if SiteSetting.must_approve_users
-      Jobs.enqueue(:user_email,
+      Jobs.enqueue(:critical_user_email,
         type: :signup_after_approval,
         user_id: id,
         email_token: email_tokens.first.token

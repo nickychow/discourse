@@ -30,6 +30,10 @@ class Plugin::Instance
     [].tap { |plugins|
       # also follows symlinks - http://stackoverflow.com/q/357754
       Dir["#{parent_path}/**/*/**/plugin.rb"].sort.each do |path|
+
+        # tagging is included in core, so don't load it
+        next if path =~ /discourse-tagging/
+
         source = File.read(path)
         metadata = Plugin::Metadata.parse(source)
         plugins << self.new(metadata, path)
@@ -65,6 +69,10 @@ class Plugin::Instance
     # Don't include serialized methods if the plugin is disabled
     plugin = self
     klass.send(:define_method, "include_#{attr}?") { plugin.enabled? }
+  end
+
+  def whitelist_staff_user_custom_field(field)
+    User.register_plugin_staff_custom_field(field, self)
   end
 
   # Extend a class but check that the plugin is enabled

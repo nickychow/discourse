@@ -10,6 +10,43 @@ describe PostAlerter do
     PostAlerter.post_created(post)
   end
 
+  context "private message" do
+    it "notifies for pms correctly" do
+      pm = Fabricate(:topic, archetype: 'private_message', category_id: nil)
+      op = Fabricate(:post, user_id: pm.user_id)
+      pm.allowed_users << pm.user
+      PostAlerter.post_created(op)
+      reply = Fabricate(:post, user_id: pm.user_id, topic_id: pm.id, reply_to_post_number: 1)
+      PostAlerter.post_created(reply)
+
+      reply2 = Fabricate(:post, topic_id: pm.id, reply_to_post_number: 1)
+      PostAlerter.post_created(reply2)
+
+      # we get a green notification for a reply
+      expect(Notification.where(user_id: pm.user_id).pluck(:notification_type).first).to eq(Notification.types[:private_message])
+
+      TopicUser.change(pm.user_id, pm.id, notification_level: TopicUser.notification_levels[:tracking])
+
+      Notification.destroy_all
+
+      reply3 = Fabricate(:post, topic_id: pm.id)
+      PostAlerter.post_created(reply3)
+
+      # no notification cause we are tracking
+      expect(Notification.where(user_id: pm.user_id).count).to eq(0)
+
+      Notification.destroy_all
+
+      reply4 = Fabricate(:post, topic_id: pm.id, reply_to_post_number: 1)
+      PostAlerter.post_created(reply4)
+
+      # yes notification cause we were replied to
+      expect(Notification.where(user_id: pm.user_id).count).to eq(1)
+
+
+    end
+  end
+
   context "unread" do
     it "does not return whispers as unread posts" do
       op = Fabricate(:post)
@@ -184,7 +221,7 @@ describe PostAlerter do
       create_post(topic_id: topic.id, user: user, raw: "my magic topic\n##{Discourse.base_url}#{post1.url}")
 
       user.reload
-      expect(user.notifications.count).to eq(1)
+      expect(user.notifications.where(notification_type: Notification.types[:linked]).count).to eq(1)
 
       expect(watcher.notifications.count).to eq(1)
 
@@ -251,6 +288,15 @@ describe PostAlerter do
       }.not_to change(user.notifications, :count)
     end
 
+  it "notification comes from editor is mention is added later" do
+      admin = Fabricate(:admin)
+      post = create_post_with_alerts(user: user, raw: 'No mention here.')
+      expect {
+        post.revise(admin, { raw: "Mention @eviltrout in this edit." })
+      }.to change(evil_trout.notifications, :count)
+      n = evil_trout.notifications.last
+      expect(n.data_hash["original_username"]).to eq(admin.username)
+    end
   end
 
   describe ".create_notification" do

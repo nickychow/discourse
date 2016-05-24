@@ -3,9 +3,10 @@ import loadScript from 'discourse/lib/load-script';
 import { default as computed, on, observes } from 'ember-addons/ember-computed-decorators';
 import { showSelector } from "discourse/lib/emoji/emoji-toolbar";
 import Category from 'discourse/models/category';
-import { SEPARATOR as categoryHashtagSeparator,
-         categoryHashtagTriggerRule
-       } from 'discourse/lib/category-hashtags';
+import { categoryHashtagTriggerRule } from 'discourse/lib/category-hashtags';
+import { TAG_HASHTAG_POSTFIX } from 'discourse/lib/tag-hashtags';
+import { search as searchCategoryTag  } from 'discourse/lib/category-tag-search';
+import { SEPARATOR } from 'discourse/lib/category-hashtags';
 
 // Our head can be a static string or a function that returns a string
 // based on input (like for numbered lists).
@@ -37,6 +38,7 @@ class Toolbar {
     ];
 
     this.addButton({
+      trimLeading: true,
       id: 'bold',
       group: 'fontStyles',
       shortcut: 'B',
@@ -44,6 +46,7 @@ class Toolbar {
     });
 
     this.addButton({
+      trimLeading: true,
       id: 'italic',
       group: 'fontStyles',
       shortcut: 'I',
@@ -134,7 +137,8 @@ class Toolbar {
       className: button.className || button.id,
       icon: button.icon || button.id,
       action: button.action || 'toolbarButton',
-      perform: button.perform || Ember.K
+      perform: button.perform || Ember.K,
+      trimLeading: button.trimLeading
     };
 
     if (button.sendAction) {
@@ -190,7 +194,8 @@ export default Ember.Component.extend({
   ready: false,
   forcePreview: false,
   insertLinkHidden: true,
-  link: '',
+  linkUrl: '',
+  linkText: '',
   lastSel: null,
   _mouseTrap: null,
 
@@ -213,7 +218,7 @@ export default Ember.Component.extend({
     const mouseTrap = Mousetrap(this.$('.d-editor-input')[0]);
 
     const shortcuts = this.get('toolbar.shortcuts');
-    Ember.keys(shortcuts).forEach(sc => {
+    Object.keys(shortcuts).forEach(sc => {
       const button = shortcuts[sc];
       mouseTrap.bind(sc, () => {
         this.send(button.action, button);
@@ -239,7 +244,7 @@ export default Ember.Component.extend({
     this.appEvents.off('composer:insert-text');
 
     const mouseTrap = this._mouseTrap;
-    Ember.keys(this.get('toolbar.shortcuts')).forEach(sc => mouseTrap.unbind(sc));
+    Object.keys(this.get('toolbar.shortcuts')).forEach(sc => mouseTrap.unbind(sc));
     this.$('.d-editor-preview').off('click.preview');
   },
 
@@ -274,17 +279,22 @@ export default Ember.Component.extend({
     Ember.run.debounce(this, this._updatePreview, 30);
   },
 
-  _applyCategoryHashtagAutocomplete(container, $editorInput) {
-    const template = container.lookup('template:category-group-autocomplete.raw');
+  _applyCategoryHashtagAutocomplete(container) {
+    const template = container.lookup('template:category-tag-autocomplete.raw');
+    const siteSettings = this.siteSettings;
 
-    $editorInput.autocomplete({
+    this.$('.d-editor-input').autocomplete({
       template: template,
       key: '#',
-      transformComplete(category) {
-        return Category.slugFor(category, categoryHashtagSeparator);
+      transformComplete(obj) {
+        if (obj.model) {
+          return Category.slugFor(obj.model, SEPARATOR);
+        } else {
+          return `${obj.text}${TAG_HASHTAG_POSTFIX}`;
+        }
       },
       dataSource(term) {
-        return Category.search(term);
+        return searchCategoryTag(term, siteSettings);
       },
       triggerRule(textarea, opts) {
         return categoryHashtagTriggerRule(textarea, opts);
@@ -355,17 +365,24 @@ export default Ember.Component.extend({
     });
   },
 
-  _getSelected() {
+  _getSelected(trimLeading) {
     if (!this.get('ready')) { return; }
 
     const textarea = this.$('textarea.d-editor-input')[0];
     const value = textarea.value;
-    const start = textarea.selectionStart;
+    var start = textarea.selectionStart;
     let end = textarea.selectionEnd;
 
-    // Windows selects the space after a word when you double click
+    // trim trailing spaces cause **test ** would be invalid
     while (end > start && /\s/.test(value.charAt(end-1))) {
       end--;
+    }
+
+    if (trimLeading) {
+      // trim leading spaces cause ** test** would be invalid
+      while(end > start && /\s/.test(value.charAt(start))) {
+        start++;
+      }
     }
 
     const selVal = value.substring(start, end);
@@ -487,7 +504,7 @@ export default Ember.Component.extend({
 
   actions: {
     toolbarButton(button) {
-      const selected = this._getSelected();
+      const selected = this._getSelected(button.trimLeading);
       const toolbarEvent = {
         selected,
         applySurround: (head, tail, exampleKey) => this._applySurround(selected, head, tail, exampleKey),
@@ -513,26 +530,27 @@ export default Ember.Component.extend({
     },
 
     insertLink() {
-      const link = this.get('link');
+      const origLink = this.get('linkUrl');
+      const linkUrl = (origLink.indexOf('://') === -1) ? `http://${origLink}` : origLink;
       const sel = this._lastSel;
 
-      if (Ember.isEmpty(link)) { return; }
-      const m = / "([^"]+)"/.exec(link);
-      if (m && m.length === 2) {
-        const description = m[1];
-        const remaining = link.replace(m[0], '');
-        this._addText(sel, `[${description}](${remaining})`);
+
+      if (Ember.isEmpty(linkUrl)) { return; }
+
+      const linkText = this.get('linkText') || '';
+      if (linkText.length) {
+        this._addText(sel, `[${linkText}](${linkUrl})`);
       } else {
         if (sel.value) {
-          this._addText(sel, `[${sel.value}](${link})`);
+          this._addText(sel, `[${sel.value}](${linkUrl})`);
         } else {
-          const desc = I18n.t('composer.link_description');
-          this._addText(sel, `[${desc}](${link})`);
-          this._selectText(sel.start + 1, desc.length);
+          this._addText(sel, `[${origLink}](${linkUrl})`);
+          this._selectText(sel.start + 1, origLink.length);
         }
       }
 
-      this.set('link', '');
+      this.set('linkUrl', '');
+      this.set('linkText', '');
     },
 
     emoji() {

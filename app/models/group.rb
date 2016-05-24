@@ -42,6 +42,7 @@ class Group < ActiveRecord::Base
   }
 
   AUTO_GROUP_IDS = Hash[*AUTO_GROUPS.to_a.flatten.reverse]
+  STAFF_GROUPS = [:admins, :moderators, :staff]
 
   ALIAS_LEVELS = {
     :nobody => 0,
@@ -82,8 +83,12 @@ class Group < ActiveRecord::Base
   def incoming_email_validator
     return if self.automatic || self.incoming_email.blank?
     incoming_email.split("|").each do |email|
-      unless Email.is_valid?(email)
-        self.errors.add(:base, I18n.t('groups.errors.invalid_incoming_email', incoming_email: email))
+      if !Email.is_valid?(email)
+        self.errors.add(:base, I18n.t('groups.errors.invalid_incoming_email', email: email))
+      elsif group = Group.where.not(id: self.id).find_by_email(email)
+        self.errors.add(:base, I18n.t('groups.errors.email_already_used_in_group', email: email, group_name: group.name))
+      elsif category = Category.find_by_email(email)
+        self.errors.add(:base, I18n.t('groups.errors.email_already_used_in_category', email: email, category_name: category.name))
       end
     end
   end
@@ -212,6 +217,17 @@ class Group < ActiveRecord::Base
     group
   end
 
+  def self.ensure_consistency!
+    reset_all_counters!
+    refresh_automatic_groups!
+  end
+
+  def self.reset_all_counters!
+    Group.pluck(:id).each do |group_id|
+      Group.reset_counters(group_id, :group_users)
+    end
+  end
+
   def self.refresh_automatic_groups!(*args)
     if args.length == 0
       args = AUTO_GROUPS.keys
@@ -334,7 +350,7 @@ class Group < ActiveRecord::Base
   end
 
   def self.find_by_email(email)
-    self.where("incoming_email LIKE ?", "%#{Email.downcase(email)}%").first
+    self.where("string_to_array(incoming_email, '|') @> ARRAY[?]", Email.downcase(email)).first
   end
 
   def bulk_add(user_ids)
@@ -366,6 +382,10 @@ class Group < ActiveRecord::Base
     Group.mentionable(user).where(id: group_id).exists?
   end
 
+  def staff?
+    STAFF_GROUPS.include?(self.name.to_sym)
+  end
+
   protected
 
     def name_format_validator
@@ -379,7 +399,7 @@ class Group < ActiveRecord::Base
       domains.each do |domain|
         domain.sub!(/^https?:\/\//, '')
         domain.sub!(/\/.*$/, '')
-        self.errors.add :base, (I18n.t('groups.errors.invalid_domain', domain: domain)) unless domain =~ /\A[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,5}(:[0-9]{1,5})?(\/.*)?\Z/i
+        self.errors.add :base, (I18n.t('groups.errors.invalid_domain', domain: domain)) unless domain =~ /\A[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,24}(:[0-9]{1,5})?(\/.*)?\Z/i
       end
       self.automatic_membership_email_domains = domains.join("|")
     end

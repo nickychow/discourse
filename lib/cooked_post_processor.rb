@@ -17,7 +17,10 @@ class CookedPostProcessor
     @cooking_options = post.cooking_options || opts[:cooking_options] || {}
     @cooking_options[:topic_id] = post.topic_id
     @cooking_options = @cooking_options.symbolize_keys
-    @doc = Nokogiri::HTML::fragment(post.cook(post.raw, @cooking_options))
+
+    analyzer = post.post_analyzer
+    @doc = Nokogiri::HTML::fragment(analyzer.cook(post.raw, @cooking_options))
+    @has_oneboxes = analyzer.found_oneboxes?
     @size_cache = {}
   end
 
@@ -28,7 +31,26 @@ class CookedPostProcessor
       post_process_oneboxes
       optimize_urls
       pull_hotlinked_images(bypass_bump)
+      grant_badges
+      extract_links
     end
+  end
+
+  # onebox may have added some links, so extract them now
+  def extract_links
+    TopicLink.extract_from(@post)
+    QuotedPost.extract_from(@post)
+  end
+
+  def has_emoji?
+    (@doc.css("img.emoji") - @doc.css(".quote img")).size > 0
+  end
+
+  def grant_badges
+    return unless Guardian.new.can_see?(@post)
+
+    BadgeGranter.grant(Badge.find(Badge::FirstEmoji), @post.user, post_id: @post.id) if has_emoji?
+    BadgeGranter.grant(Badge.find(Badge::FirstOnebox), @post.user, post_id: @post.id) if @has_oneboxes
   end
 
   def keep_reverse_index_up_to_date
@@ -116,13 +138,16 @@ class CookedPostProcessor
     if w > 0 || h > 0
       w = w.to_f
       h = h.to_f
-      original_width, original_height = get_size(img["src"]).map {|integer| integer.to_f}
+
+      return unless original_image_size = get_size(img["src"])
+      original_width, original_height = original_image_size.map(&:to_f)
+
       if w > 0
         ratio = w/original_width
-        return [w.floor, (original_height*ratio).floor]
+        [w.floor, (original_height*ratio).floor]
       else
         ratio = h/original_height
-        return [(original_width*ratio).floor, h.floor]
+        [(original_width*ratio).floor, h.floor]
       end
     end
   end
@@ -169,7 +194,10 @@ class CookedPostProcessor
     original_width, original_height = get_size(src)
 
     # can't reach the image...
-    if original_width.nil? || original_height.nil?
+    if original_width.nil? ||
+       original_height.nil? ||
+       original_width == 0 ||
+       original_height == 0
       Rails.logger.info "Can't reach '#{src}' to get its dimension."
       return
     end
@@ -179,8 +207,16 @@ class CookedPostProcessor
 
     return if is_a_hyperlink?(img)
 
+    crop = false
+    if original_width.to_f / original_height.to_f < 0.75
+      crop = true
+      width, height = ImageSizer.crop(original_width, original_height)
+      img["width"] = width
+      img["height"] = height
+    end
+
     if upload = Upload.get_from_url(src)
-      upload.create_thumbnail!(width, height)
+      upload.create_thumbnail!(width, height, crop)
     end
 
     add_lightbox!(img, original_width, original_height, upload)
@@ -263,6 +299,7 @@ class CookedPostProcessor
 
     # apply oneboxes
     Oneboxer.apply(@doc, topic_id: @post.topic_id) { |url|
+      @has_oneboxes = true
       Oneboxer.onebox(url, args)
     }
 

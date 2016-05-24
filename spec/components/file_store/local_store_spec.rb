@@ -40,6 +40,7 @@ describe FileStore::LocalStore do
     it "moves the file to the tombstone" do
       FileUtils.expects(:mkdir_p)
       FileUtils.expects(:move)
+      File.expects(:exists?).returns(true)
       upload = Upload.new
       upload.stubs(:url).returns("/uploads/default/42/253dc8edf9d4ada1.png")
       store.remove_upload(upload)
@@ -52,6 +53,7 @@ describe FileStore::LocalStore do
     it "moves the file to the tombstone" do
       FileUtils.expects(:mkdir_p)
       FileUtils.expects(:move)
+      File.expects(:exists?).returns(true)
       oi = OptimizedImage.new
       oi.stubs(:url).returns("/uploads/default/_optimized/42/253dc8edf9d4ada1.png")
       store.remove_optimized_image(upload)
@@ -84,10 +86,20 @@ describe FileStore::LocalStore do
 
   end
 
+  def stub_for_subfolder
+    GlobalSetting.stubs(:relative_url_root).returns('/forum')
+    Discourse.stubs(:base_uri).returns("/forum")
+  end
+
   describe ".absolute_base_url" do
 
     it "is present" do
       expect(store.absolute_base_url).to eq("http://test.localhost/uploads/default")
+    end
+
+    it "supports subfolder" do
+      stub_for_subfolder
+      expect(store.absolute_base_url).to eq("http://test.localhost/forum/uploads/default")
     end
 
   end
@@ -96,6 +108,11 @@ describe FileStore::LocalStore do
 
     it "is present" do
       expect(store.relative_base_url).to eq("/uploads/default")
+    end
+
+    it "supports subfolder" do
+      stub_for_subfolder
+      expect(store.relative_base_url).to eq("/forum/uploads/default")
     end
 
   end

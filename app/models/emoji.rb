@@ -1,4 +1,7 @@
 class Emoji
+  # update this to clear the cache
+  EMOJI_VERSION = "v2"
+
   include ActiveModel::SerializerSupport
 
   attr_reader :path
@@ -20,19 +23,19 @@ class Emoji
   end
 
   def self.all
-    Discourse.cache.fetch("all_emojis:v2") { standard | custom }
+    Discourse.cache.fetch("all_emojis:#{EMOJI_VERSION}") { standard | custom }
   end
 
   def self.standard
-    Discourse.cache.fetch("standard_emojis:v2") { load_standard }
+    Discourse.cache.fetch("standard_emojis:#{EMOJI_VERSION}") { load_standard }
   end
 
   def self.aliases
-    Discourse.cache.fetch("aliases_emojis:v2") { load_aliases }
+    Discourse.cache.fetch("aliases_emojis:#{EMOJI_VERSION}") { load_aliases }
   end
 
   def self.custom
-    Discourse.cache.fetch("custom_emojis:v2") { load_custom }
+    Discourse.cache.fetch("custom_emojis:#{EMOJI_VERSION}") { load_custom }
   end
 
   def self.exists?(name)
@@ -53,7 +56,7 @@ class Emoji
 
   def self.create_from_db_item(emoji)
     name = emoji["name"]
-    filename = "#{name}.png"
+    filename = "#{emoji['filename'] || name}.png"
     Emoji.new.tap do |e|
       e.name = name
       e.url = "/images/emoji/#{SiteSetting.emoji_set}/#{filename}"
@@ -76,10 +79,10 @@ class Emoji
   end
 
   def self.clear_cache
-    Discourse.cache.delete("custom_emojis")
-    Discourse.cache.delete("standard_emojis")
-    Discourse.cache.delete("aliases_emojis")
-    Discourse.cache.delete("all_emojis")
+    Discourse.cache.delete("custom_emojis:#{EMOJI_VERSION}")
+    Discourse.cache.delete("standard_emojis:#{EMOJI_VERSION}")
+    Discourse.cache.delete("aliases_emojis:#{EMOJI_VERSION}")
+    Discourse.cache.delete("all_emojis:#{EMOJI_VERSION}")
   end
 
   def self.db_file
@@ -87,7 +90,14 @@ class Emoji
   end
 
   def self.db
-    @db ||= File.open(db_file, "r:UTF-8") { |f| JSON.parse(f.read) }
+    return @db if @db
+    @db = File.open(db_file, "r:UTF-8") { |f| JSON.parse(f.read) }
+
+    # Small tweak to `emoji.json` from Emoji one
+    @db['emojis'] << {"code" => "1f44d", "name" => "+1", "filename" => "thumbsup"}
+    @db['emojis'] << {"code" => "1f44e", "name" => "-1", "filename" => "thumbsdown"}
+
+    @db
   end
 
   def self.load_standard
@@ -128,8 +138,8 @@ class Emoji
     @unicode_replacements = {}
     db['emojis'].each do |e|
       hex = e['code'].hex
-      # Don't replace digits or letters
-      if hex > 128
+      # Don't replace digits, letters and some symbols
+      if hex > 255 && e['name'] != 'tm'
         @unicode_replacements[[hex].pack('U')] = e['name']
       end
     end

@@ -8,15 +8,28 @@
   padding-bottom: 3px;
   text-transform: uppercase;
   font-weight: bold;
+
+  .topic-avatar {
+    margin-top: 5px;
+  }
+
+  .small-action-desc {
+    padding-top: 1em;
+
+    button {
+      padding-top: 0px;
+    }
+  }
 }
 
-.small-action .topic-avatar {
-  margin-top: 5px;
+/* hide the reply border above the time gap notices */
+.time-gap + .topic-post article {
+  border-top: none;
 }
 
 .topic-post article {
   border-top: 1px solid dark-light-diff($primary, $secondary, 90%, -60%);
-  padding: 6px 0;
+  padding: 8px 0;
 }
 
 .post-stream {
@@ -100,7 +113,6 @@ button {
   bottom: 0;
   left: 135px;
   z-index: 1000;
-  display: none;
 
   h3 {
     margin-top: 0;
@@ -288,7 +300,7 @@ a.star {
     .btn {
       border: 0;
       padding: 0 15px;
-      color: $primary;
+      color: dark-light-choose(scale-color($primary, $lightness: 60%), scale-color($secondary, $lightness: 40%));
       background: blend-primary-secondary(5%);
       border-left: 1px solid dark-light-diff($primary, $secondary, 90%, -65%);
       border-top: 1px solid dark-light-diff($primary, $secondary, 90%, -65%);
@@ -315,10 +327,11 @@ a.star {
   }
 }
 
-/* this is to force the drop-down notification state description para below the button */
+
 #topic-footer-buttons p {
-  clear: both;
+  clear: both; /* this is to force the drop-down notification state description para below the button */
   margin: 0;
+  color: dark-light-choose(scale-color($primary, $lightness: 50%), scale-color($secondary, $lightness: 50%));
 }
 
 #suggested-topics {
@@ -374,6 +387,7 @@ span.post-count {
 
 .quote-button.visible {
   display: block;
+  z-index: 936;
 }
 
 iframe {
@@ -395,6 +409,12 @@ iframe {
     margin-right: 5px;
     padding-top: 1px;
   }
+  span {
+    color: dark-light-choose(scale-color($primary, $lightness: 50%), scale-color($secondary, $lightness: 50%));
+  }
+  span.title {
+    color: $primary;
+  }
 }
 
 .btn-group {
@@ -413,9 +433,9 @@ iframe {
   right: 4px;
 }
 
-#selected-posts {
+.selected-posts {
   width: 97%;
-  padding-left: 3%;
+  padding: 0.1em 0.7em;
   background-color: srgb-scale($tertiary, $secondary, 15%);
   .btn {
     margin-bottom: 10px;
@@ -487,8 +507,12 @@ span.highlighted {
   .names {
     margin: 5px 0 0 5px;
     line-height: 17px;
-    span {
+    span.full-name, span.user-title, span.username {
       display: block;
+    }
+
+    .poster-icon {
+      float: right;
     }
   }
   .post-info {

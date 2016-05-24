@@ -5,6 +5,14 @@ class UserOption < ActiveRecord::Base
 
   after_save :update_tracked_topics
 
+  def self.ensure_consistency!
+    exec_sql("SELECT u.id FROM users u
+              LEFT JOIN user_options o ON o.user_id = u.id
+              WHERE o.user_id IS NULL").values.each do |id,_|
+      UserOption.create(user_id: id.to_i)
+    end
+  end
+
   def self.previous_replies_type
     @previous_replies_type ||= Enum.new(always: 0, unless_emailed: 1, never: 2)
   end
@@ -16,6 +24,7 @@ class UserOption < ActiveRecord::Base
   def set_defaults
     self.email_always = SiteSetting.default_email_always
     self.mailing_list_mode = SiteSetting.default_email_mailing_list_mode
+    self.mailing_list_mode_frequency = SiteSetting.default_email_mailing_list_mode_frequency
     self.email_direct = SiteSetting.default_email_direct
     self.automatically_unpin_topics = SiteSetting.default_topics_automatic_unpin
     self.email_private_messages = SiteSetting.default_email_private_messages
@@ -41,7 +50,14 @@ class UserOption < ActiveRecord::Base
       self.digest_after_minutes ||= SiteSetting.default_email_digest_frequency.to_i
     end
 
+    self.include_tl0_in_digests = SiteSetting.default_include_tl0_in_digests
+
     true
+  end
+
+  def mailing_list_mode
+    return false if SiteSetting.disable_mailing_list_mode
+    super
   end
 
   def update_tracked_topics
@@ -131,7 +147,10 @@ end
 #  auto_track_topics_after_msecs :integer
 #  new_topic_duration_minutes    :integer
 #  last_redirected_to_top_at     :datetime
-#  email_previous_replies        :integer          default(1), not null
+#  email_previous_replies        :integer          default(2), not null
+#  email_in_reply_to             :boolean          default(TRUE), not null
+#  like_notification_frequency   :integer          default(1), not null
+#  include_tl0_in_digests        :boolean          default(FALSE)
 #
 # Indexes
 #

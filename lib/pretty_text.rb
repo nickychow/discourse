@@ -1,12 +1,15 @@
-require 'v8'
+require 'mini_racer'
 require 'nokogiri'
 require_dependency 'url_helper'
 require_dependency 'excerpt_parser'
 require_dependency 'post'
+require_dependency 'discourse_tagging'
 
 module PrettyText
 
-  class Helpers
+  module Helpers
+    extend self
+
     def t(key, opts)
       key = "js." + key
       unless opts
@@ -67,6 +70,20 @@ module PrettyText
         }
       end
     end
+
+    def category_tag_hashtag_lookup(text)
+      tag_postfix = '::tag'
+      is_tag = text =~ /#{tag_postfix}$/
+
+      if !is_tag && category = Category.query_from_hashtag_slug(text)
+        [category.url_with_id, text]
+      elsif is_tag && tag = TopicCustomField.find_by(name: DiscourseTagging::TAGS_FIELD_NAME, value: text.gsub!("#{tag_postfix}", ''))
+        ["#{Discourse.base_url}/tags/#{tag.value}", text]
+      else
+        nil
+      end
+    end
+
   end
 
   @mutex = Mutex.new
@@ -77,10 +94,12 @@ module PrettyText
   end
 
   def self.create_new_context
-    # timeout any eval that takes longer that 5 seconds
-    ctx = V8::Context.new(timeout: 5000)
+    # timeout any eval that takes longer than 15 seconds
+    ctx = MiniRacer::Context.new(timeout: 15000)
 
-    ctx["helpers"] = Helpers.new
+    Helpers.instance_methods.each do |method|
+      ctx.attach("helpers.#{method}", Helpers.method(method))
+    end
 
     ctx_load(ctx,
       "vendor/assets/javascripts/md5.js",
@@ -184,6 +203,7 @@ module PrettyText
     # we use the exact same markdown converter as the client
     # TODO: use the same extensions on both client and server (in particular the template for mentions)
     baked = nil
+    text = text || ""
 
     protect do
       context = v8
@@ -192,8 +212,9 @@ module PrettyText
 
       context_opts = opts || {}
       context_opts[:sanitize] = true unless context_opts[:sanitize] == false
-      context['opts'] = context_opts
-      context['raw'] = text
+
+      context.eval("opts = #{context_opts.to_json};")
+      context.eval("raw = #{text.inspect};")
 
       if Post.white_listed_image_classes.present?
         Post.white_listed_image_classes.each do |klass|
@@ -220,6 +241,7 @@ module PrettyText
       context.eval('opts["categoryHashtagLookup"] = function(c){return helpers.category_hashtag_lookup(c);}')
       context.eval('opts["lookupAvatar"] = function(p){return Discourse.Utilities.avatarImg({size: "tiny", avatarTemplate: helpers.avatar_template(p)});}')
       context.eval('opts["getTopicInfo"] = function(i){return helpers.get_topic_info(i)};')
+      context.eval('opts["categoryHashtagLookup"] = function(c){return helpers.category_tag_hashtag_lookup(c);}')
       DiscourseEvent.trigger(:markdown_context, context)
       baked = context.eval('Discourse.Markdown.markdownConverter(opts).makeHtml(raw)')
     end
@@ -243,8 +265,10 @@ module PrettyText
   # leaving this here, cause it invokes v8, don't want to implement twice
   def self.avatar_img(avatar_template, size)
     protect do
-      v8['avatarTemplate'] = avatar_template
-      v8['size'] = size
+      v8.eval <<JS
+      avatarTemplate = #{avatar_template.inspect};
+      size = #{size.to_i};
+JS
       decorate_context(v8)
       v8.eval("Discourse.Utilities.avatarImg({ avatarTemplate: avatarTemplate, size: size });")
     end
@@ -252,9 +276,8 @@ module PrettyText
 
   def self.unescape_emoji(title)
     protect do
-      v8["title"] = title
       decorate_context(v8)
-      v8.eval("Discourse.Emoji.unescape(title)")
+      v8.eval("Discourse.Emoji.unescape(#{title.inspect})")
     end
   end
 
@@ -328,12 +351,12 @@ module PrettyText
   def self.extract_links(html)
     links = []
     doc = Nokogiri::HTML.fragment(html)
-    # remove href inside quotes
-    doc.css("aside.quote a").each { |l| l["href"] = "" }
+    # remove href inside quotes & elided part
+    doc.css("aside.quote a, .elided a").each { |l| l["href"] = "" }
 
     # extract all links from the post
     doc.css("a").each { |l|
-      unless l["href"].blank?
+      unless l["href"].blank? || "#".freeze == l["href"][0]
         links << DetectedLink.new(l["href"])
       end
     }
@@ -371,30 +394,16 @@ module PrettyText
     fragment.to_html
   end
 
-  # Given a Nokogiri doc, convert all links to absolute
-  def self.make_all_links_absolute(doc)
-    site_uri = nil
-    doc.css("a").each do |link|
-      href = link["href"].to_s
-      begin
-        uri = URI(href)
-        site_uri ||= URI(Discourse.base_url)
-        link["href"] = "#{site_uri}#{link['href']}" unless uri.host.present?
-      rescue URI::InvalidURIError, URI::InvalidComponentError
-        # leave it
-      end
-    end
-  end
-
   def self.strip_image_wrapping(doc)
     doc.css(".lightbox-wrapper .meta").remove
   end
 
-  def self.format_for_email(html)
-    doc = Nokogiri::HTML.fragment(html)
-    make_all_links_absolute(doc)
-    strip_image_wrapping(doc)
-    doc.to_html
+  def self.format_for_email(html, post = nil, style = nil)
+    Email::Styles.new(html, style: style).tap do |doc|
+      DiscourseEvent.trigger(:reduce_cooked, doc, post)
+      doc.make_all_links_absolute
+      doc.send :"format_#{style}" if style
+    end.to_html
   end
 
   protected
@@ -412,15 +421,7 @@ module PrettyText
   def self.protect
     rval = nil
     @mutex.synchronize do
-      begin
-        rval = yield
-        # This may seem a bit odd, but we don't want to leak out
-        # objects that require locks on the v8 vm, to get a backtrace
-        # you need a lock, if this happens in the wrong spot you can
-        # deadlock a process
-      rescue V8::Error => e
-        raise JavaScriptError.new(e.message, e.backtrace)
-      end
+      rval = yield
     end
     rval
   end

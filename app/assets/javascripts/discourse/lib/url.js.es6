@@ -2,7 +2,7 @@
 let _jumpScheduled = false;
 const rewrites = [];
 
-const DiscourseURL = Ember.Object.createWithMixins({
+const DiscourseURL = Ember.Object.extend({
 
   // Used for matching a topic
   TOPIC_REGEXP: /\/t\/([^\/]+)\/(\d+)\/?(\d+)?/,
@@ -11,9 +11,7 @@ const DiscourseURL = Ember.Object.createWithMixins({
     return _jumpScheduled;
   },
 
-  /**
-    Jumps to a particular post in the stream
-  **/
+  // Jumps to a particular post in the stream
   jumpToPost(postNumber, opts) {
     const holderId = `#post_${postNumber}`;
     const offset = () => {
@@ -92,6 +90,15 @@ const DiscourseURL = Ember.Object.createWithMixins({
     });
   },
 
+  routeToTag(a) {
+    if (a && a.host !== document.location.host) {
+      document.location = a.href;
+      return false;
+    }
+
+    return this.routeTo(a.href);
+  },
+
   /**
     Our custom routeTo method is used to intelligently overwrite default routing
     behavior.
@@ -141,9 +148,7 @@ const DiscourseURL = Ember.Object.createWithMixins({
       }
     }
 
-    rewrites.forEach(function(rw) {
-      path = path.replace(rw.regexp, rw.replacement);
-    });
+    rewrites.forEach(rw => path = path.replace(rw.regexp, rw.replacement));
 
     if (this.navigatedToPost(oldPath, path)) { return; }
     // Schedule a DOM cleanup event
@@ -175,8 +180,9 @@ const DiscourseURL = Ember.Object.createWithMixins({
    * @method isInternal
    * @param {String} url
   **/
-  isInternal: function(url) {
+  isInternal(url) {
     if (url && url.length) {
+      if (url.indexOf('//') === 0) { url = "http:" + url; }
       if (url.indexOf('#') === 0) { return true; }
       if (url.indexOf('/') === 0) { return true; }
       if (url.indexOf(this.origin()) === 0) { return true; }
@@ -217,6 +223,8 @@ const DiscourseURL = Ember.Object.createWithMixins({
         if (newMatches[3]) { opts.nearPost = newMatches[3]; }
         if (path.match(/last$/)) { opts.nearPost = topicController.get('model.highest_post_number'); }
         const closest = opts.nearPost || 1;
+
+        opts.cancelSummary = true;
 
         postStream.refresh(opts).then(() => {
           topicController.setProperties({
@@ -326,7 +334,6 @@ const DiscourseURL = Ember.Object.createWithMixins({
       }
     });
   }
-
-});
+}).create();
 
 export default DiscourseURL;

@@ -1,3 +1,5 @@
+require_dependency 'distributed_mutex'
+
 class EmailLog < ActiveRecord::Base
   belongs_to :user
   belongs_to :post
@@ -7,10 +9,33 @@ class EmailLog < ActiveRecord::Base
 
   scope :sent,    -> { where(skipped: false) }
   scope :skipped, -> { where(skipped: true) }
+  scope :bounced, -> { sent.where(bounced: true) }
 
   after_create do
     # Update last_emailed_at if the user_id is present and email was sent
     User.where(id: user_id).update_all("last_emailed_at = CURRENT_TIMESTAMP") if user_id.present? && !skipped
+  end
+
+  def self.unique_email_per_post(post, user)
+    return yield unless post && user
+
+    DistributedMutex.synchronize("email_log_#{post.id}_#{user.id}") do
+      if where(post_id: post.id, user_id: user.id, skipped: false).exists?
+        nil
+      else
+        yield
+      end
+    end
+  end
+
+  def self.reached_max_emails?(user)
+    return false if SiteSetting.max_emails_per_day_per_user == 0
+
+    count = sent.where('created_at > ?', 1.day.ago)
+        .where(user_id: user.id)
+        .count
+
+    count >= SiteSetting.max_emails_per_day_per_user
   end
 
   def self.count_per_day(start_date, end_date)

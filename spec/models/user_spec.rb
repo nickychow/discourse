@@ -38,7 +38,6 @@ describe User do
       Jobs.expects(:enqueue).with(:send_system_message, user_id: user.id, message_type: 'welcome_user').never
       user.enqueue_welcome_message('welcome_user')
     end
-
   end
 
   describe '.approve' do
@@ -48,7 +47,7 @@ describe User do
     it "enqueues a 'signup after approval' email if must_approve_users is true" do
       SiteSetting.stubs(:must_approve_users).returns(true)
       Jobs.expects(:enqueue).with(
-        :user_email, has_entries(type: :signup_after_approval)
+        :critical_user_email, has_entries(type: :signup_after_approval)
       )
       user.approve(admin)
     end
@@ -331,6 +330,20 @@ describe User do
     end
   end
 
+  describe '.is_singular_admin?' do
+    it 'returns true if user is singular admin' do
+      admin = Fabricate(:admin)
+      expect(admin.is_singular_admin?).to eq(true)
+    end
+
+    it 'returns false if user is not the only admin' do
+      admin = Fabricate(:admin)
+      second_admin = Fabricate(:admin)
+
+      expect(admin.is_singular_admin?).to eq(false)
+    end
+  end
+
   describe 'name heuristics' do
     it 'is able to guess a decent name from an email' do
       expect(User.suggest_name('sam.saffron@gmail.com')).to eq('Sam Saffron')
@@ -581,6 +594,29 @@ describe User do
       expect(user.previous_visit_at).to be_within_one_second_of(second_visit_date)
     end
 
+  end
+
+  describe "update_last_seen!" do
+    let (:user) { Fabricate(:user) }
+    let!(:first_visit_date) { Time.zone.now }
+    let!(:second_visit_date) { 2.hours.from_now }
+
+    it "should update the last seen value" do
+      expect(user.last_seen_at).to eq nil
+      user.update_last_seen!(first_visit_date)
+      expect(user.reload.last_seen_at).to be_within_one_second_of(first_visit_date)
+    end
+
+    it "should update the first seen value if it doesn't exist" do
+      user.update_last_seen!(first_visit_date)
+      expect(user.reload.first_seen_at).to be_within_one_second_of(first_visit_date)
+    end
+
+    it "should not update the first seen value if it doesn't exist" do
+      user.update_last_seen!(first_visit_date)
+      user.update_last_seen!(second_visit_date)
+      expect(user.reload.first_seen_at).to be_within_one_second_of(first_visit_date)
+    end
   end
 
   describe "last_seen_at" do

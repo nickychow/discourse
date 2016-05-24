@@ -134,6 +134,8 @@ pt:
         disabled: 'removido da lista %{when}'
     topic_admin_menu: "Ações administrativas dos Tópicos"
     emails_are_disabled: "Todos os envios de e-mail foram globalmente desativados por um administrador. Nenhum e-mail de notificação será enviado."
+    bootstrap_mode_enabled: "Para facilitar o lançamento do seu novo sítio mais fácil, encontra-se agora em modo de inicialização. Qualquer utilizador novo terá nível de confiança 1 e resumos de email diários ligados. Este modo será automaticamente desligado quando o número total de utilizadores ultrapassar %{min_users}."
+    bootstrap_mode_disabled: "Modo de inicialização será desligado dentro das próximas 24 horas."
     s3:
       regions:
         us_east_1: "Este dos E.U.A. (Virgínia do Norte)"
@@ -179,6 +181,8 @@ pt:
     more: "Mais"
     less: "Menos"
     never: "nunca"
+    every_30_minutes: "a cada 30 minutos"
+    every_hour: "a cada hora"
     daily: "diário"
     weekly: "semanal"
     every_two_weeks: "a cada duas semanas"
@@ -326,7 +330,10 @@ pt:
         one: "grupo"
         other: "grupos"
       members: "Membros"
+      topics: "Tópicos"
       posts: "Mensagens"
+      mentions: "Menções"
+      messages: "Mensagens"
       alias_levels:
         title: "Quem pode mandar mensagens e @mencionar este grupo?"
         nobody: "Ninguém"
@@ -433,9 +440,7 @@ pt:
         perm_denied_btn: "Permissão Negada"
         perm_denied_expl: "Negou a permissão para as notificações. Autorize as notificações através das configurações do seu navegador."
         disable: "Desativar Notificações"
-        currently_enabled: "(atualmente ativo)"
         enable: "Ativar Notificações"
-        currently_disabled: "(atualmente inativo)"
         each_browser_note: "Nota: Tem que alterar esta configuração em todos os navegadores de internet que utiliza."
       dismiss_notifications: "Marcar tudo como lido"
       dismiss_notifications_tooltip: "Marcar como lidas todas as notificações por ler"
@@ -470,7 +475,7 @@ pt:
       muted_users: "Mudo"
       muted_users_instructions: "Suprimir todas as notificações destes utilizadores."
       muted_topics_link: "Mostrar tópicos mudos"
-      automatically_unpin_topics: "Desafixar tópicos automaticamente quando você chegar ao final."
+      automatically_unpin_topics: "Desafixar tópicos automaticamente quando eu chegar ao final."
       staff_counters:
         flags_given: "sinalizações úteis"
         flagged_posts: "mensagens sinalizadas"
@@ -496,7 +501,7 @@ pt:
         set_password: "Definir Palavra-passe"
       change_about:
         title: "Modificar Sobre Mim"
-        error: "Ocorreu um erro ao alterar este valor."
+        error: "Ocorreu um erro ao modificar este valor."
       change_username:
         title: "Alterar Nome de Utilizador"
         confirm: "Se mudar o seu nome de utilizador, todas as citações anteriores das suas mensagens e menções a @nome serão quebradas. Tem a certeza que deseja fazê-lo?"
@@ -571,17 +576,35 @@ pt:
         title: "Medalha de cartão de utilizador"
       website: "Sítio da Internet"
       email_settings: "Email"
+      like_notification_frequency:
+        title: "Notificar quando alguém gostar"
+        always: "Sempre"
+        first_time_and_daily: "Na primeira vez que mensagem é gostada e diariamente"
+        first_time: "A primeira vez que uma mensagem é gostada."
+        never: "Nunca"
+      email_previous_replies:
+        title: "Incluir respostas prévias no fundo do email."
+        unless_emailed: "a não ser quê previamente enviado"
+        always: "sempre"
+        never: "nunca"
       email_digests:
         title: "Quando não visitar o sítio, enviar um email com o resumo das novidades:"
+        every_30_minutes: "a cada 30 minutos"
+        every_hour: "A cada hora"
         daily: "diariamente"
         every_three_days: "a cada três dias"
         weekly: "semanalmente"
         every_two_weeks: "a cada duas semanas"
+      include_tl0_in_digests: "Incluir mensagens de novos utilizadores nos emails de resumo"
+      email_in_reply_to: "Incluir um excerto do mensagem respondida nos emails"
       email_direct: "Enviar-me um email quando alguém me citar, responder às minhas mensagens, mencionar o meu @nomedeutilizador, ou convidar-me para um tópico"
       email_private_messages: "Enviar-me um email quando alguém me envia uma mensagem"
       email_always: "Enviar-me notificações de email mesmo quando estou ativo no sítio"
       other_settings: "Outros"
       categories_settings: "Categorias"
+      enable_mailing_list:
+        one: "Tem a certeza que quer receber um correio por cada nova mensagem?"
+        other: "Tem a certeza que deseja receber um correio por cada nova mensagem?<br><br>Isto resultará em aproximadamente<b>{{count}} correios</b> por dia."
       new_topic_duration:
         label: "Considerar tópicos como novos quando"
         not_viewed: "Ainda não os vi"
@@ -647,18 +670,41 @@ pt:
       summary:
         title: "Sumário"
         stats: "Estatísticas"
-        topic_count: "Tópicos Criados"
-        post_count: "Mensagens Criadas"
-        likes_given: "Gostos Dados"
-        likes_received: "Gostos Recebidos"
-        days_visited: "Dias Visitados"
-        posts_read_count: "Mensagens Lidas"
+        time_read: "Tempo de leitura"
+        topic_count:
+          one: "Tópico criado"
+          other: "Tópicos criados"
+        post_count:
+          one: "mensagem criada"
+          other: "mensagens criadas"
+        likes_given:
+          one: "<i class='fa fa-heart'></i> dado"
+          other: "<i class='fa fa-heart'></i> dados"
+        likes_received:
+          one: "<i class='fa fa-heart'></i> recebido"
+          other: "<i class='fa fa-heart'></i> recebidos"
+        days_visited:
+          one: "dia visitado"
+          other: "dias visitados"
+        posts_read:
+          one: "mensagem lida"
+          other: "mensagens lidas"
+        bookmark_count:
+          one: "marcador"
+          other: "marcadores"
         top_replies: "Respostas"
-        top_topics: "Melhores Tópicos"
-        top_badges: "Melhores Distintivos"
-        more_topics: "Mais Tópicos"
+        no_replies: "Nenhuma resposta ainda."
         more_replies: "Mais Respostas"
-        more_badges: "Mais Distintivos"
+        top_topics: "Melhores Tópicos"
+        no_topics: "Nenhum tópico ainda."
+        more_topics: "Mais Tópicos"
+        top_badges: "Melhores Medalhas"
+        no_badges: "Nenhuma medalha ainda."
+        more_badges: "Mais Medalhas"
+        top_links: "Melhores hiperligações"
+        no_links: "Não há nenhuma hiperligação ainda."
+        most_liked_by: "Por mais apreciados"
+        no_likes: "Nenhum gostos ainda."
       associated_accounts: "Contas associadas"
       ip_address:
         title: "Último endereço IP"
@@ -703,9 +749,16 @@ pt:
     read_only_mode:
       enabled: "Este sítio encontra-se no modo só de leitura. Por favor continue a navegar mas responder, dar gostos e outras acções estão de momento  desativadas."
       login_disabled: "A função de início de sessão está desativada enquanto o sítio se encontrar no modo só de leitura."
+      logout_disabled: "A função de término de sessão está desativada enquanto o sítio se encontrar no modo só de leitura."
     too_few_topics_and_posts_notice: "Vamos <a href='http://blog.discourse.org/2014/08/building-a-discourse-community/'>começar esta discussão!</a> Atualmente existem <strong>%{currentTopics} / %{requiredTopics}</strong> tópicos e <strong>%{currentPosts} / %{requiredPosts}</strong> mensagens. Novos visitantes precisam de conversações para ler e responder a."
     too_few_topics_notice: "Vamos <a href='http://blog.discourse.org/2014/08/building-a-discourse-community/'>começar esta discussão!</a> Atualmente existem <strong>%{currentTopics} / %{requiredTopics}</strong> tópios. Novos visitantes precisam de algumas conversações para ler e responder a."
     too_few_posts_notice: "Vamos <a href='http://blog.discourse.org/2014/08/building-a-discourse-community/'>começar esta discussão!</a> Atualmente existem <strong>%{currentPosts} / %{requiredPosts}</strong> mensagens. Novos visitantes precisam de algumas conversações para ler e responder a."
+    logs_error_rate_notice:
+      reached: "%{timestamp}: Velocidade corrente de <a href='%{url}' target='_blank'>%{rate}</a> alcançou o limite definido nas configurações do site de %{siteSettingRate}."
+      exceeded: "%{timestamp}: Velocidade corrente de <a href='%{url}' target='_blank'>%{rate}</a> excedeu o limite definido nas configurações do site de %{siteSettingRate}."
+      rate:
+        one: "1 erro/%{duration}"
+        other: "%{count} erros/%{duration}"
     learn_more: "saber mais..."
     year: 'ano'
     year_desc: 'tópicos criados nos últimos 365 dias'
@@ -798,6 +851,9 @@ pt:
       twitter:
         title: "com Twitter"
         message: "A autenticar com Twitter (certifique-se de que os bloqueadores de popup estão desativados)"
+      instagram:
+        title: "com Instagram"
+        message: "A autenticar com Instagram (certifique-se de que os bloqueadores de popup estão desativados)"
       facebook:
         title: "com Facebook"
         message: "A autenticar com o Facebook (certifique-se de que os bloqueadores de popup estão desativados)"
@@ -866,7 +922,7 @@ pt:
       link_description: "digite a descrição da hiperligação aqui"
       link_dialog_title: "Inserir Hiperligação"
       link_optional_text: "título opcional"
-      link_placeholder: "http://example.com \"texto opcional\""
+      link_url_placeholder: "http://example.com"
       quote_title: "Bloco de Citação"
       quote_text: "Bloco de Citação"
       code_title: "Texto pré-formatado"
@@ -903,9 +959,13 @@ pt:
       group_mentioned: "<i title='group mentioned' class='fa fa-at'></i><p><span>{{username}}</span> {{description}}</p>"
       quoted: "<i title='quoted' class='fa fa-quote-right'></i><p><span>{{username}}</span> {{description}}</p>"
       replied: "<i title='replied' class='fa fa-reply'></i><p><span>{{username}}</span> {{description}}</p>"
-      posted: "<i title='replied' class='fa fa-reply'></i><p><span>{{username}}</span> {{description}}</p>"
+      posted: "<i title='posted' class='fa fa-reply'></i><p><span>{{username}}</span> {{description}}</p>"
       edited: "<i title='edited' class='fa fa-pencil'></i><p><span>{{username}}</span> {{description}}</p>"
       liked: "<i title='liked' class='fa fa-heart'></i><p><span>{{username}}</span> {{description}}</p>"
+      liked_2: "<i title='liked' class='fa fa-heart'></i><p><span>{{username}}, {{username2}}</span> {{description}}</p>"
+      liked_many:
+        one: "<i title='liked' class='fa fa-heart'></i><p><span>{{username}}, {{username2}} e 1 outro</span> {{description}}</p>"
+        other: "<i title='liked' class='fa fa-heart'></i><p><span>{{username}}, {{username2}} e {{count}} outros</span> {{description}}</p>"
       private_message: "<i title='private message' class='fa fa-envelope-o'></i><p><span>{{username}}</span> {{description}}</p>"
       invited_to_private_message: "<i title='private message' class='fa fa-envelope-o'></i><p><span>{{username}}</span> {{description}}</p>"
       invited_to_topic: "<i title='invited to topic' class='fa fa-hand-o-right'></i><p><span>{{username}}</span> {{description}}</p>"
@@ -1001,6 +1061,9 @@ pt:
         selected:
           one: "Selecionou  <b>1</b> tópico."
           other: "Selecionou <b>{{count}}</b> tópicos."
+        change_tags: "Mudar Etiquetas"
+        choose_new_tags: "Escolha novas etiquetas para estes tópicos:"
+        changed_tags: "As etiquetas para esses tópicos foram mudadas."
       none:
         unread: "Tem tópicos não lidos."
         new: "Não tem novos tópicos."
@@ -1013,8 +1076,8 @@ pt:
         top: "Não existem tópicos recentes."
         search: "Não há resultados na pesquisa."
         educate:
-          new: '<p>Os seus novos tópicos aparecem aqui.</p><p>Por defeito, os tópicos são considerados novos e mostrarão o indicador <span class="badge new-topic badge-notification" style="vertical-align:middle;line-height:inherit;">novo</span> caso tenham sido criados nos últimos 2 dias.</p><p>Pode alterar isto nas suas <a href="%{userPrefsUrl}">preferências</a>.</p>'
-          unread: '<p>Os seus tópicos não lidos aparecem aqui.</p><p>Por defeito, os tópicos são considerados não lidos e aparecem nas contagens de não lidos <span class="badge new-posts badge-notification">1</span> Se:</p><ul><li>Criou o tópico</li><li>Respondeu ao tópico</li><li>Leu o tópico por mais de 4 minutos</li></ul><p>Ou, se definiu explicitamente o tópico para acompanhar ou vigiar através do controlo de notificações que se encontra na parte inferior de cada tópico.</p><p> Pode alterar isto nas suas <a href="%{userPrefsUrl}">preferências</a>.</p>'
+          new: '<p>Os seus novos tópicos aparecem aqui.</p><p>Por defeito, os tópicos são considerados novos e mostrarão o indicador <span class="badge new-topic badge-notification" style="vertical-align:middle;line-height:inherit;">novo</span> caso tenham sido criados nos últimos 2 dias.</p><p>Pode alterar isto nas suas <a href="%{userPrefsUrl}"> preferências</a>.</p>'
+          unread: '<p>Os seus tópicos não lidos aparecem aqui.</p><p>Por defeito, os tópicos são considerados não lidos e aparecem nas contagens de não lidos <span class="badge new-posts badge-notification">1</span> Se:&lt;/p><ul><li>Criou o tópico</li><li>Respondeu ao tópico</li><li>Leu o tópico por mais de 4 minutos</li></ul><p>Ou, se definiu explicitamente o tópico para acompanhar ou vigiar através do controlo de notificações que se encontra na parte inferior de cada tópico.</p><p>Visite as <a href="%{userPrefsUrl}">preferências</a> para alterar isto.</p>'
       bottom:
         latest: "Não existem mais tópicos recentes."
         hot: "Não existem mais tópicos quentes."
@@ -1155,6 +1218,8 @@ pt:
         invisible: "Tornar Não Listado"
         visible: "Tornar Listado"
         reset_read: "Repor Data de Leitura"
+        make_public: "Criar tópico publico"
+        make_private: "Criar mensagem privada"
       feature:
         pin: "Fixar Tópico"
         unpin: "Desafixar Tópico"
@@ -1314,10 +1379,9 @@ pt:
         create: "Pedimos desculpa, ocorreu um erro ao criar a sua mensagem. Por favor, tente novamente."
         edit: "Pedimos desculpa, ocorreu um erro ao editar a sua mensagem. Por favor, tente novamente."
         upload: "Pedimos desculpa, ocorreu um erro ao carregar esse ficheiro. Por favor, tente novamente."
-        attachment_too_large: "Pedimos desculpa, o ficheiro que está a carregar é muito grande (o tamanho máximo permitido é {{max_size_kb}}kb)."
-        file_too_large: "Pedimos desculpa, o ficheiro que está a tentar carregar é muito grande (o tamanho máximo permitido é {{max_size_kb}}kb)."
+        file_too_large: "Lamentamos mas esse ficheiro é demasiado grande (o tamanho máximo é de {{max_size_kb}}kb). Porque não carregar o seu ficheiro grande para um serviço de partilha na nuvem e depois partilhar o link?"
         too_many_uploads: "Pedimos desculpa, só pode carregar um ficheiro de cada vez."
-        too_many_dragged_and_dropped_files: "Pedimos desculpa, só pode arrastar e largar até 10 ficheiros de cada vez."
+        too_many_dragged_and_dropped_files: "Lamentamos mas só pode carregar 10 ficheiros de cada vez."
         upload_not_authorized: "Pedimos desculpa, o tipo de ficheiro que está a carregar não está autorizado (extensões autorizadas: {{authorized_extensions}})."
         image_upload_not_allowed_for_new_user: "Pedimos desculpa, os novos utilizadores não podem carregar imagens."
         attachment_upload_not_allowed_for_new_user: "Pedimos desculpa, os novos utilizadores não podem carregar anexos."
@@ -1327,11 +1391,13 @@ pt:
         no_value: "Não, manter"
         yes_value: "Sim, abandonar"
       via_email: "esta mensagem chegou por email"
+      via_auto_generated_email: "esta mensagem chegou via um email gerado automaticamente"
       whisper: "esta mensagem é um susurro privado para os moderadores"
       wiki:
         about: "esta mensagem é uma wiki"
       archetypes:
         save: 'Guardar as Opções'
+      few_likes_left: "Obrigado por partilhar o amor! Restam-lhe apenas um gostos para hoje."
       controls:
         reply: "começar a compor uma resposta a este tópico"
         like: "gostar deste tópico"
@@ -1379,17 +1445,14 @@ pt:
           like: "Retirar gosto"
           vote: "Retirar voto"
         people:
-          off_topic: "{{icons}} sinalizou isto como fora de contexto"
-          spam: "{{icons}} sinalizou isto como spam"
-          spam_with_url: "{{icons}} sinalizaram <a href='{{postUrl}}'>isto como spam</a>"
-          inappropriate: "{{icons}} sinalizou isto como inapropriado"
-          notify_moderators: "{{icons}} moderadores notificados"
-          notify_moderators_with_url: "{{icons}} <a href='{{postUrl}}'>moderadores notificados</a>"
-          notify_user: "{{icons}} enviou uma mensagem"
-          notify_user_with_url: "{{icons}} enviou uma <a href='{{postUrl}}'>mensagem</a>"
-          bookmark: "{{icons}} adicionaram um marcador a isto"
-          like: "{{icons}} gostaram disto"
-          vote: "{{icons}} votaram nisto"
+          off_topic: "sinalizou isto como fora de contexto"
+          spam: "sinalizou isto como spam"
+          inappropriate: "sinalizou isto como inapropriado"
+          notify_moderators: "moderadores notificados"
+          notify_user: "enviou uma mensagem"
+          bookmark: "adicionou um marcador disto"
+          like: "gostou disto"
+          vote: "votou nisto"
         by_you:
           off_topic: "Sinalizou isto como fora de contexto"
           spam: "Sinalizou isto como spam"
@@ -1461,6 +1524,7 @@ pt:
           last: "Última revisão"
           hide: "Esconder revisão"
           show: "Mostrar revisão"
+          revert: "Reverter para esta revisão"
           comparing_previous_to_current_out_of_total: "<strong>{{previous}}</strong> <i class='fa fa-arrows-h'></i> <strong>{{current}}</strong> / {{total}}"
         displays:
           inline:
@@ -1541,10 +1605,10 @@ pt:
           description: "Nunca será notificado de nada acerca de novos tópicos nestas categorias, e estes não irão aparecer nos recentes."
     flagging:
       title: 'Obrigado por ajudar a manter a nossa comunidade cívica!'
-      private_reminder: 'as sinalizações são privadas, visíveis <b>apenas</b> para o pessoal'
       action: 'Sinalizar Mensagem'
       take_action: "Acionar"
       notify_action: 'Mensagem'
+      official_warning: 'Aviso Oficial'
       delete_spammer: "Eliminar Spammer"
       delete_confirm: "Está prestes a apagar <b>%{posts}</b> mensagens e <b>%{topics}</b> tópicos deste utilizador, remover a sua conta, bloquear acessos do seu endereço IP <b>%{ip_address}</b>, e adicionar o seu endereço de email <b>%{email}</b> a uma lista negra. Tem a certeza que este utilizador é de facto um spammer?"
       yes_delete_spammer: "Sim, Eliminar Spammer"
@@ -1553,7 +1617,7 @@ pt:
       submit_tooltip: "Submeter a sinalização privada"
       take_action_tooltip: "Atingir imediatamente o limite de sinalizações, em vez de esperar por mais denúncias da comunidade"
       cant: "Pedimos desculpa, não é possível colocar uma sinalização nesta mensagem neste momento."
-      notify_staff: 'Notificar Pessoal'
+      notify_staff: 'Notificar o pessoal privadamente'
       formatted_name:
         off_topic: "Está fora do contexto"
         inappropriate: "É inapropriado"
@@ -1758,7 +1822,7 @@ pt:
           30_days_ago: "30 Dias Atrás"
           all: "Tudo"
           view_table: "tabela"
-          view_chart: "gráfico de barras"
+          view_graph: "grafo"
           refresh_report: "Atualizar relatório"
           start_date: "Data de Início"
           end_date: "Data final"
@@ -1895,12 +1959,12 @@ pt:
         none: "Nenhuma cópia de segurança disponível."
         read_only:
           enable:
-            title: "Ativar o modo só de leitura"
-            label: "Ativar modo só de leitura"
-            confirm: "Tem a certeza que quer ativar o modo só de leitura?"
+            title: "Activar modo só de leitura"
+            label: "Activar só de leitura"
+            confirm: "Tem a certeza que quer activar o modo só de leitura?"
           disable:
-            title: "Desativar o modo só de leitura"
-            label: "Desativar modo só de leitura"
+            title: "Desactivar modo só de leitura"
+            label: "Desactivar só para leitura"
         logs:
           none: "Nenhuns logs ainda..."
         columns:
@@ -1934,11 +1998,11 @@ pt:
             is_disabled: "A opção de restauro encontra-se desativada nas configurações do sítio."
             label: "Restaurar"
             title: "Restaurar a cópia de segurança"
-            confirm: "Tem a certeza que deseja restaurar esta cópia de segurança?"
+            confirm: "Tem a certeza que deseja recuperar esta cópia de segurança?"
           rollback:
             label: "Reverter"
             title: "Reverter a base de dados para um estado anterior operacional"
-            confirm: "Tem a certeza que deseja reverter a base de dados para um estado anterior operacional?"
+            confirm: "Tem a certeza que pretende reverter a base de dados para o estado de funcionamento anterior?"
       export_csv:
         user_archive_confirm: "Tem a certeza que deseja descarregar as suas mensagens?"
         success: "Exportação iniciada, será notificado através de mensagem assim que o processo estiver concluído."
@@ -2041,9 +2105,6 @@ pt:
           love:
             name: 'amor'
             description: "A cor do botão 'gosto'."
-          wiki:
-            name: 'wiki'
-            description: "Cor base utilizada para o fundo de mensagens wiki"
       email:
         title: "Emails"
         settings: "Configurações"
@@ -2080,6 +2141,13 @@ pt:
           subject: "Assunto"
           error: "Erro"
           none: "Nenhum email de entrada encontrado."
+          modal:
+            title: "Detalhes de emails recebidos."
+            error: "Erro"
+            headers: "Cabeçalhos"
+            subject: "Assunto"
+            body: "Corpo"
+            rejection_message: "Correio de rejeição"
           filters:
             from_placeholder: "de@exemplo.com"
             to_placeholder: "para@exemplo.com"
@@ -2155,6 +2223,9 @@ pt:
             revoke_admin: "revogar administração"
             grant_moderation: "conceder moderação"
             revoke_moderation: "revogar moderação"
+            backup_operation: "operação de cópia de segurança"
+            deleted_tag: "etiqueta removida"
+            renamed_tag: "etiqueta renomeada"
         screened_emails:
           title: "Emails Filtrados"
           description: "Quando alguém tenta criar uma nova conta, os seguintes endereços de email serão verificados e o registo será bloqueado, ou outra ação será executada."
@@ -2393,6 +2464,10 @@ pt:
           title: "Exibir no perfil público?"
           enabled: "exibido no perfil"
           disabled: "não exibido no perfil"
+        show_on_user_card:
+          title: "Mostrar no cartão de utilizador?"
+          enabled: "mostrar no cartão de utilizador"
+          disabled: "não apresentado no cartão de utilizador"
         field_types:
           text: 'Campo de Texto'
           confirm: 'Confirmação'
@@ -2438,6 +2513,7 @@ pt:
           login: "Iniciar Sessão"
           plugins: "Plugins"
           user_preferences: "Preferências do Utilizador"
+          tags: "Etiquetas"
       badges:
         title: Distintivos
         new_badge: Novo Distintivo
@@ -2446,6 +2522,7 @@ pt:
         badge: Distintivo
         display_name: Exibir Nome
         description: Descrição
+        long_description: Descrição longa
         badge_type: Tipo de Distintivo
         badge_grouping: Grupo
         badge_groupings:
@@ -2485,6 +2562,7 @@ pt:
           post_revision: "Quando um utilizador edita ou cria uma mensagem"
           trust_level_change: "Quando um utilizador muda de Nível de Confiança"
           user_change: "Quando um utilizador é editado ou criado"
+          post_processed: "Depois de uma mensagem ser processada"
         preview:
           link_text: "Pré-visualizar distintivos concedidos"
           plan_text: "Pré-visualizar com plano de consulta"
@@ -2606,12 +2684,13 @@ pt:
         mark_watching: '<b>m</b>, <b>w</b> Vigiar este tópico'
     badges:
       earned_n_times:
-        one: "Ganhou este distintivo 1 vez"
-        other: "Ganhou este distintivo %{count} vezes"
-      more_with_badge: "Outros com este distintivo"
+        one: "Ganhou esta medalha 1 vez"
+        other: "Ganhou esta medalha %{count} vezes"
+      granted_on: "Ganho %{date}"
+      others_count: "Outras pessoas com esta medalha (%{count})"
       title: Distintivos
-      allow_title: "pode ser usado como título"
-      multiple_grant: "pode ser premiado múltiplas vezes"
+      allow_title: "título disponivel"
+      multiple_grant: "atribuido multiplas vezes"
       badge_count:
         one: "1 Distintivo"
         other: "%{count} Distintivos"
@@ -2634,97 +2713,6 @@ pt:
           name: Outro
         posting:
           name: A publicar
-      badge:
-        editor:
-          name: Editor
-          description: Primeira edição de uma mensagem
-        basic_user:
-          name: Básico
-          description: <a href="https://meta.discourse.org/t/what-do-user-trust-levels-do/4924/4">Atribuídas</a> todas as funções comunitárias essenciais
-        member:
-          name: Membro
-          description: <a href="https://meta.discourse.org/t/what-do-user-trust-levels-do/4924/5">Atribuídos</a> convites
-        regular:
-          name: Habitual
-          description: <a href="https://meta.discourse.org/t/what-do-user-trust-levels-do/4924/6">Atribuída</a> re-categorização, renomeação, seguimento de hiperligações e lounge
-        leader:
-          name: Líder
-          description: <a href="https://meta.discourse.org/t/what-do-user-trust-levels-do/4924/7">Atribuída a</a> edição, destaque, encerramento, arquivo, separação e junção globais
-        welcome:
-          name: Bem-vindo
-          description: Recebeu um gosto
-        autobiographer:
-          name: Autobiógrafo
-          description: 'Preencheu informações no <a href="/my/preferences">perfil</a> de utilizador '
-        anniversary:
-          name: Aniversário
-          description: Membro ativo há um ano, publicou pelo menos uma vez
-        nice_post:
-          name: Boa Mensagem
-          description: Recebeu 10 gostos numa mensagem. Este distintivo pode ser concedido diversas vezes
-        good_post:
-          name: Ótima Mensagem
-          description: 'Recebeu 25 gostos numa mensagem. Este distintivo pode ser concedido diversas vezes '
-        great_post:
-          name: Excelente Mensagem
-          description: Recebeu 50 gostos numa mensagem. Este distintivo pode ser concedido diversas vezes
-        nice_topic:
-          name: Bom Tópico
-          description: Recebeu 10 gostos num tópico. Este distintivo pode ser concedido diversas vezes
-        good_topic:
-          name: Ótimo Tópico
-          description: 'Recebeu 25 gostos num tópico. Este distintivo pode ser concedido diversas vezes '
-        great_topic:
-          name: Excelente Tópico
-          description: Recebeu 50 gostos num tópico. Este distintivo pode ser concedido diversas vezes
-        nice_share:
-          name: Boa Partilha
-          description: Partilhou uma mensagem com 25 visitantes únicos
-        good_share:
-          name: Ótima Partilha
-          description: Partilhou uma mensagem com 300 visitantes únicos
-        great_share:
-          name: Excelente Partilha
-          description: Partilhou uma mensagem com 1000 visitantes únicos
-        first_like:
-          name: Primeiro Gosto
-          description: Gostou de uma mensagem
-        first_flag:
-          name: Primeira Sinalização
-          description: Sinalizou uma mensagem
-        promoter:
-          name: Promotor
-          description: Convidou um utilizador
-        campaigner:
-          name: Partidário
-          description: Convidou 3 utilizadores básicos (nível de confiança 1)
-        champion:
-          name: Campeão
-          description: Convidou 5 membros (nível de confiança 2)
-        first_share:
-          name: Primeira Partilha
-          description: Partilhou uma mensagem
-        first_link:
-          name: Primeira Hiperligação
-          description: Adicionou uma hiperligação interna para outro tópico
-        first_quote:
-          name: Primeira Citação
-          description: Citou um utilizador
-        read_guidelines:
-          name: Ler Diretrizes
-          description: Leu as <a href="/guidelines">diretrizes da comunidade</a>
-        reader:
-          name: Leitor
-          description: Ler todas as mensagens num tópico com mais de 100 mensagens
-        popular_link:
-          name: Hiperligação Popular
-          description: Foi publicada uma hiperligação externa com pelo menos 50 cliques
-        hot_link:
-          name: Hiperligação Quente
-          description: Foi publicada uma hiperligação externa com pelo menos 300 cliques
-        famous_link:
-          name: Hiperligação Famosa
-          description: Foi publicada uma hiperligação externa com pelo menos 1000 cliques
     google_search: |
       <h3>Pesquise com o Google</h3>
       <p>
@@ -2734,3 +2722,46 @@ pt:
       <button class="btn btn-primary">Google</button>
       </form>
       </p>
+    tagging:
+      all_tags: "Todas as Etiquetas"
+      selector_all_tags: "todas as etiquetas"
+      changed: "etiquetas modificadas:"
+      tags: "Etiquetas"
+      choose_for_topic: "escolha etiquetas opcionais para este tópico"
+      delete_tag: "Remover Etiqueta"
+      delete_confirm: "Tem a certeza que deseja remover esta etiqueta?"
+      rename_tag: "Renomear Etiqueta"
+      rename_instructions: "Escolha o novo nome para a etiqueta:"
+      sort_by: "Ordenar por:"
+      sort_by_count: "contagem"
+      sort_by_name: "nome"
+      filters:
+        without_category: "%{filter} %{tag} tópicos"
+        with_category: "%{filter} %{tag} tópicos em %{category}"
+      notifications:
+        watching:
+          title: "A vigiar"
+          description: "Vigiará automaticamente todos os tópicos novos nesta etiqueta. Será notificado acerca de todas as novas mensagens e tópicos,bem como lhe será apresentada a contagem de mensagens por ler e novas ao lado do tópico."
+        tracking:
+          title: "A seguir"
+          description: "Irá automaticamente seguir todos os novos tópicos nesta etiqueta. Uma contagem de mensagens não lidas e novas aparecerá ao lado to tópico."
+        regular:
+          title: "Regular"
+          description: "Será notificado quando alguém mencione o seu @nome ou responda à sua mensagem."
+        muted:
+          title: "Silenciado"
+          description: "Não será notificado acerca de novos tópicos sob esta etiqueta, não aparecendo eles no seu separador de não lidos."
+      topics:
+        none:
+          unread: "Não tem tópicos por ler."
+          new: "Não tem nenhum tópico novo."
+          read: "Ainda não leu quaisquer tópicos."
+          posted: "Ainda não publicou nada em um tópico qualquer."
+          latest: "Não há tópicos recentes."
+          hot: "Não há tópicos quentes."
+          bookmarks: "Não marcou qualquer tópico ainda."
+          top: "Não há quaisquer tópicos de topo."
+          search: "Não há resultados para a procura."
+        bottom:
+          latest: "Não há mais tópicos recentes."
+          hot: "Não há mais tópicos quentes."
