@@ -32,7 +32,7 @@ module Email
     def initialize(mail_string)
       raise EmptyEmailError if mail_string.blank?
       @staged_users_created = 0
-      @raw_email = mail_string
+      @raw_email = try_to_encode(mail_string, "UTF-8") || try_to_encode(mail_string, "ISO-8859-1") || mail_string
       @mail = Mail.new(@raw_email)
       @message_id = @mail.message_id.presence || Digest::MD5.hexdigest(mail_string)
     end
@@ -126,7 +126,9 @@ module Email
         when :reply
           email_log = destination[:obj]
 
-          raise ReplyUserNotMatchingError if email_log.user_id != user.id
+          if email_log.user_id != user.id
+            raise ReplyUserNotMatchingError, "email_log.user_id => #{email_log.user_id.inspect}, user.id => #{user.id.inspect}"
+          end
 
           create_reply(user: user,
                        raw: body,
@@ -148,15 +150,17 @@ module Email
         bounce_key = verp[/\+verp-(\h{32})@/, 1]
         if bounce_key && (email_log = EmailLog.find_by(bounce_key: bounce_key))
           email_log.update_columns(bounced: true)
-
-          if @mail.error_status.present?
-            if @mail.error_status.start_with?("4.")
-              update_bounce_score(email_log.user.email, SOFT_BOUNCE_SCORE)
-            elsif @mail.error_status.start_with?("5.")
-              update_bounce_score(email_log.user.email, HARD_BOUNCE_SCORE)
+          email = email_log.user.try(:email) || @from_email
+          if email.present?
+            if @mail.error_status.present?
+              if @mail.error_status.start_with?("4.")
+                Email::Receiver.update_bounce_score(email, SOFT_BOUNCE_SCORE)
+              elsif @mail.error_status.start_with?("5.")
+                Email::Receiver.update_bounce_score(email, HARD_BOUNCE_SCORE)
+              end
+            elsif is_auto_generated?
+              Email::Receiver.update_bounce_score(email, HARD_BOUNCE_SCORE)
             end
-          elsif is_auto_generated?
-            update_bounce_score(email_log.user.email, HARD_BOUNCE_SCORE)
           end
         end
       end
@@ -168,7 +172,7 @@ module Email
       @verp ||= all_destinations.select { |to| to[/\+verp-\h{32}@/] }.first
     end
 
-    def update_bounce_score(email, score)
+    def self.update_bounce_score(email, score)
       # only update bounce score once per day
       key = "bounce_score:#{email}:#{Date.today}"
 
@@ -201,7 +205,6 @@ module Email
     def select_body
       text = nil
       html = nil
-      elided = nil
 
       if @mail.multipart?
         text = fix_charset(@mail.text_part)
@@ -212,16 +215,18 @@ module Email
         text = fix_charset(@mail)
       end
 
-      # prefer text over html
-      text = trim_discourse_markers(text) if text.present?
-      text, elided = EmailReplyTrimmer.trim(text, true) if text.present?
-      return [text, elided] if text.present?
+      if html.present? && (SiteSetting.incoming_email_prefer_html || text.blank?)
+        html = Email::HtmlCleaner.new(html).output_html
+        html = trim_discourse_markers(html)
+        html, elided = EmailReplyTrimmer.trim(html, true)
+        return [html, elided]
+      end
 
-      # clean the html if that's all we've got
-      html = Email::HtmlCleaner.new(html).output_html if html.present?
-      html = trim_discourse_markers(html) if html.present?
-      html, elided = EmailReplyTrimmer.trim(html, true) if html.present?
-      return [html, elided] if html.present?
+      if text.present?
+        text = trim_discourse_markers(text)
+        text, elided = EmailReplyTrimmer.trim(text, true)
+        return [text, elided]
+      end
     end
 
     def fix_charset(mail_part)
@@ -231,14 +236,16 @@ module Email
 
       return nil if string.blank?
 
-      # 1) use the charset provided
-      if mail_part.charset.present?
-        fixed = try_to_encode(string, mail_part.charset)
+      # common encodings
+      encodings = ["UTF-8", "ISO-8859-1"]
+      encodings.unshift(mail_part.charset) if mail_part.charset.present?
+
+      encodings.uniq.each do |encoding|
+        fixed = try_to_encode(string, encoding)
         return fixed if fixed.present?
       end
 
-      # 2) try most used encodings
-      try_to_encode(string, "UTF-8") || try_to_encode(string, "ISO-8859-1")
+      nil
     end
 
     def try_to_encode(string, encoding)
@@ -326,15 +333,26 @@ module Email
 
       # reply
       match = reply_by_email_address_regex.match(address)
-      if match && match[1].present?
-        email_log = EmailLog.for(match[1])
-        return { type: :reply, obj: email_log } if email_log
+      if match && match.captures
+        match.captures.each do |c|
+          next if c.blank?
+          email_log = EmailLog.for(c)
+          return { type: :reply, obj: email_log } if email_log
+        end
       end
     end
 
     def reply_by_email_address_regex
-      @reply_by_email_address_regex ||= Regexp.new Regexp.escape(SiteSetting.reply_by_email_address)
-                                                         .gsub(Regexp.escape("%{reply_key}"), "([[:xdigit:]]{32})")
+      @reply_by_email_address_regex ||= begin
+        reply_addresses = [
+           SiteSetting.reply_by_email_address,
+          *SiteSetting.alternative_reply_by_email_addresses.split("|")
+        ]
+        escaped_reply_addresses = reply_addresses.select { |a| a.present? }
+                                                 .map { |a| Regexp.escape(a) }
+                                                 .map { |a| a.gsub(Regexp.escape("%{reply_key}"), "([[:xdigit:]]{32})") }
+        Regexp.new(escaped_reply_addresses.join("|"))
+      end
     end
 
     def group_incoming_emails_regex
@@ -449,8 +467,11 @@ module Email
       # ensure posts aren't created in the future
       options[:created_at] = [@mail.date, DateTime.now].min
 
+      is_private_message = options[:archetype] == Archetype.private_message ||
+                           options[:topic].try(:private_message?)
+
       # only add elided part in messages
-      if @elided.present? && options[:topic].try(:private_message?)
+      if @elided.present? && is_private_message
         options[:raw] << "\n\n" << "<details class='elided'>" << "\n"
         options[:raw] << "<summary title='#{I18n.t('emails.incoming.show_trimmed_content')}'>&#183;&#183;&#183;</summary>" << "\n"
         options[:raw] << @elided << "\n"

@@ -263,7 +263,7 @@ HTML
 
     it "should have an option to preserve emoji codes" do
       emoji_code = "<img src='/images/emoji/emoji_one/heart.png?v=1' title=':heart:' class='emoji' alt=':heart:'>"
-      expect(PrettyText.excerpt(emoji_code, 100, { keep_emoji_codes: true })).to eq(":heart:")
+      expect(PrettyText.excerpt(emoji_code, 100)).to eq(":heart:")
     end
 
   end
@@ -318,7 +318,7 @@ HTML
     it "adds base url to relative links" do
       html = "<p><a class=\"mention\" href=\"/users/wiseguy\">@wiseguy</a>, <a class=\"mention\" href=\"/users/trollol\">@trollol</a> what do you guys think? </p>"
       output = described_class.format_for_email(html, post)
-      expect(output).to eq("<p><a href=\"#{base_url}/users/wiseguy\">@wiseguy</a>, <a href=\"#{base_url}/users/trollol\">@trollol</a> what do you guys think? </p>")
+      expect(output).to eq("<p><a class=\"mention\" href=\"#{base_url}/users/wiseguy\">@wiseguy</a>, <a class=\"mention\" href=\"#{base_url}/users/trollol\">@trollol</a> what do you guys think? </p>")
     end
 
     it "doesn't change external absolute links" do
@@ -417,11 +417,11 @@ HTML
   describe "tag and category links" do
 
     it "produces tag links" do
-      # TODO where is our tags table?
-      TopicCustomField.create!(topic_id: 1, name: DiscourseTagging::TAGS_FIELD_NAME, value: "known")
-      # TODO does it make sense to generate hashtags for tags that are missing in action?
+      Fabricate(:topic, {tags: [Fabricate(:tag, name: 'known')]})
       expect(PrettyText.cook(" #unknown::tag #known::tag")).to match_html("<p> <span class=\"hashtag\">#unknown::tag</span> <a class=\"hashtag\" href=\"http://test.localhost/tags/known\">#<span>known</span></a></p>")
     end
+
+    # TODO does it make sense to generate hashtags for tags that are missing in action?
 
   end
 

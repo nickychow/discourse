@@ -77,8 +77,8 @@ module PrettyText
 
       if !is_tag && category = Category.query_from_hashtag_slug(text)
         [category.url_with_id, text]
-      elsif is_tag && tag = TopicCustomField.find_by(name: DiscourseTagging::TAGS_FIELD_NAME, value: text.gsub!("#{tag_postfix}", ''))
-        ["#{Discourse.base_url}/tags/#{tag.value}", text]
+      elsif is_tag && tag = Tag.find_by_name(text.gsub!("#{tag_postfix}", ''))
+        ["#{Discourse.base_url}/tags/#{tag.name}", text]
       else
         nil
       end
@@ -267,7 +267,7 @@ module PrettyText
     protect do
       v8.eval <<JS
       avatarTemplate = #{avatar_template.inspect};
-      size = #{size.to_i};
+      size = #{size.inspect};
 JS
       decorate_context(v8)
       v8.eval("Discourse.Utilities.avatarImg({ avatarTemplate: avatarTemplate, size: size });")
@@ -394,16 +394,31 @@ JS
     fragment.to_html
   end
 
+ # Given a Nokogiri doc, convert all links to absolute
+ def self.make_all_links_absolute(doc)
+   site_uri = nil
+   doc.css("a").each do |link|
+     href = link["href"].to_s
+     begin
+       uri = URI(href)
+       site_uri ||= URI(Discourse.base_url)
+       link["href"] = "#{site_uri}#{link['href']}" unless uri.host.present?
+     rescue URI::InvalidURIError, URI::InvalidComponentError
+       # leave it
+     end
+   end
+ end
+
   def self.strip_image_wrapping(doc)
     doc.css(".lightbox-wrapper .meta").remove
   end
 
-  def self.format_for_email(html, post = nil, style = nil)
-    Email::Styles.new(html, style: style).tap do |doc|
-      DiscourseEvent.trigger(:reduce_cooked, doc, post)
-      doc.make_all_links_absolute
-      doc.send :"format_#{style}" if style
-    end.to_html
+  def self.format_for_email(html, post = nil)
+    doc = Nokogiri::HTML.fragment(html)
+    DiscourseEvent.trigger(:reduce_cooked, doc, post)
+    strip_image_wrapping(doc)
+    make_all_links_absolute(doc)
+    doc.to_html
   end
 
   protected
