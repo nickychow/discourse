@@ -40,7 +40,12 @@ export default Discourse.Route.extend({
       Ember.run.scheduleOnce('afterRender', function() {
         self.appEvents.trigger('post:highlight', closest);
       });
-      DiscourseURL.jumpToPost(closest);
+
+      const opts = {};
+      if (document.location.hash && document.location.hash.length) {
+        opts.anchor = document.location.hash;
+      }
+      DiscourseURL.jumpToPost(closest, opts);
 
       if (!Ember.isEmpty(topic.get('draft'))) {
         composerController.open({
@@ -51,8 +56,10 @@ export default Discourse.Route.extend({
           ignoreIfChanged: true
         });
       }
-    }).catch(function(e) {
-      Ember.warn('Could not view topic', e);
+    }).catch(e => {
+      if (!Ember.testing) {
+        console.log('Could not view topic', e);
+      }
     });
   }
 

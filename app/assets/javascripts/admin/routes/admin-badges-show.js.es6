@@ -1,3 +1,4 @@
+import { ajax } from 'discourse/lib/ajax';
 import Badge from 'discourse/models/badge';
 import showModal from 'discourse/lib/show-modal';
 
@@ -12,7 +13,7 @@ export default Ember.Route.extend({
         name: I18n.t('admin.badges.new_badge')
       });
     }
-    return this.modelFor('adminBadges').findProperty('id', parseInt(params.badge_id));
+    return this.modelFor('adminBadges').findBy('id', parseInt(params.badge_id));
   },
 
   actions: {
@@ -31,7 +32,7 @@ export default Ember.Route.extend({
 
     preview(badge, explain) {
       badge.set('preview_loading', true);
-      Discourse.ajax('/admin/badges/preview.json', {
+      ajax('/admin/badges/preview.json', {
         method: 'post',
         data: {
           sql: badge.get('query'),

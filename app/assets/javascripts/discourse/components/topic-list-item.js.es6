@@ -1,22 +1,45 @@
-import StringBuffer from 'discourse/mixins/string-buffer';
+import computed from 'ember-addons/ember-computed-decorators';
+import { bufferedRender } from 'discourse-common/lib/buffered-render';
+import { getOwner } from 'discourse-common/lib/get-owner';
 
-export default Ember.Component.extend(StringBuffer, {
+export function showEntrance(e) {
+  let target = $(e.target);
+
+  if (target.hasClass('posts-map') || target.parents('.posts-map').length > 0) {
+    if (target.prop('tagName') !== 'A') {
+      target = target.find('a');
+      if (target.length===0) {
+        target = target.end();
+      }
+    }
+    getOwner(this).lookup('controller:application').send("showTopicEntrance", {topic: this.get('topic'), position: target.offset()});
+    return false;
+  }
+}
+
+export default Ember.Component.extend(bufferedRender({
   rerenderTriggers: ['bulkSelectEnabled', 'topic.pinned'],
   tagName: 'tr',
-  rawTemplate: 'list/topic-list-item.raw',
   classNameBindings: [':topic-list-item', 'unboundClassNames'],
   attributeBindings: ['data-topic-id'],
   'data-topic-id': Em.computed.alias('topic.id'),
 
   actions: {
     toggleBookmark() {
-      this.get('topic').toggleBookmark().finally(() => this.rerender());
+      this.get('topic').toggleBookmark().finally(() => this.rerenderBuffer());
     }
   },
 
-  unboundClassNames: function() {
+  buildBuffer(buffer) {
+    const template = getOwner(this).lookup('template:list/topic-list-item.raw');
+    if (template) {
+      buffer.push(template(this));
+    }
+  },
+
+  @computed('topic', 'lastVisitedTopic')
+  unboundClassNames(topic, lastVisitedTopic) {
     let classes = [];
-    const topic = this.get('topic');
 
     if (topic.get('category')) {
       classes.push("category-" + topic.get('category.fullSlug'));
@@ -32,8 +55,12 @@ export default Ember.Component.extend(StringBuffer, {
       }
     });
 
+    if (topic === lastVisitedTopic) {
+      classes.push('last-visit');
+    }
+
     return classes.join(' ');
-  }.property(),
+  },
 
   titleColSpan: function() {
     return (!this.get('hideCategory') &&
@@ -55,6 +82,16 @@ export default Ember.Component.extend(StringBuffer, {
       return false;
     }
 
+    if (this.site.mobileView) {
+      if (!this.siteSettings.show_pinned_excerpt_mobile) {
+        return false;
+      }
+    } else {
+      if (!this.siteSettings.show_pinned_excerpt_desktop) {
+        return false;
+      }
+    }
+
     if (this.get('expandGloballyPinned') && this.get('topic.pinned_globally')) {
       return true;
     }
@@ -67,19 +104,10 @@ export default Ember.Component.extend(StringBuffer, {
   }.property(),
 
   click(e) {
-    let target = $(e.target);
+    const result = showEntrance.call(this, e);
+    if (result === false) { return result; }
 
-    if (target.hasClass('posts-map') || target.parents('.posts-map').length > 0) {
-      if (target.prop('tagName') !== 'A') {
-        target = target.find('a');
-        if (target.length===0) {
-          target = target.end();
-        }
-      }
-      this.container.lookup('controller:application').send("showTopicEntrance", {topic: this.get('topic'), position: target.offset()});
-      return false;
-    }
-
+    const target = $(e.target);
     if (target.hasClass('bulk-select')) {
       const selected = this.get('selected');
       const topic = this.get('topic');
@@ -97,11 +125,12 @@ export default Ember.Component.extend(StringBuffer, {
     }
   },
 
-  highlight() {
+  highlight(opts = { isLastViewedTopic: false }) {
     const $topic = this.$();
     const originalCol = $topic.css('backgroundColor');
     $topic
       .addClass('highlighted')
+      .attr('data-islastviewedtopic', opts.isLastViewedTopic)
       .stop()
       .animate({ backgroundColor: originalCol }, 2500, 'swing', function() {
         $topic.removeClass('highlighted');
@@ -112,7 +141,7 @@ export default Ember.Component.extend(StringBuffer, {
     // highlight the last topic viewed
     if (this.session.get('lastTopicIdViewed') === this.get('topic.id')) {
       this.session.set('lastTopicIdViewed', null);
-      this.highlight();
+      this.highlight({ isLastViewedTopic: true });
     } else if (this.get('topic.highlight')) {
       // highlight new topics that have been loaded from the server or the one we just created
       this.set('topic.highlight', false);
@@ -120,4 +149,4 @@ export default Ember.Component.extend(StringBuffer, {
     }
   }.on('didInsertElement')
 
-});
+}));

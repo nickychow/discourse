@@ -1,23 +1,70 @@
 require 'sqlite3'
 require File.expand_path(File.dirname(__FILE__) + "/base.rb")
 
+# Paste these lines into your shell before running this:
+
+=begin
+export MBOX_SUBDIR="messages" # subdirectory with mbox files
+export LIST_NAME=LIST_NAME
+export DEFAULT_TRUST_LEVEL=1
+export DATA_DIR=~/data/import
+export SPLIT_AT="^From " # or "^From (.*)"
+=end
+
+# If you change the functionality of this script, please consider updating this HOWTO:
+# https://meta.discourse.org/t/howto-import-mbox-mailing-list-files/51233
+
 class ImportScripts::Mbox < ImportScripts::Base
+  include ActiveModel::Validations
+
   # CHANGE THESE BEFORE RUNNING THE IMPORTER
 
+  MBOX_SUBDIR = ENV['MBOX_SUBDIR'] || "messages" # subdirectory with mbox files
+  LIST_NAME = ENV['LIST_NAME'] || "" # Will remove [LIST_NAME] from Subjects
+  DEFAULT_TRUST_LEVEL = ENV['DEFAULT_TRUST_LEVEL'] || 1
+  DATA_DIR = ENV['DATA_DIR'] || "~/data/import"
+  MBOX_DIR = File.expand_path(DATA_DIR) # where index.db will be created
   BATCH_SIZE = 1000
-  CATEGORY_ID = 6
-  MBOX_DIR = File.expand_path("~/import/site")
 
-  # Remove to not split individual files
-  SPLIT_AT = /^From (.*) at/
+  # Site settings
+  SiteSetting.disable_emails = true
+
+  # Comment out if each file contains a single message
+  # Use formail to split yourself: http://linuxcommand.org/man_pages/formail1.html
+  # SPLIT_AT = /^From (.*) at/ # for Google Groups?
+  SPLIT_AT = /#{ENV['SPLIT_AT']}/ || /^From / # for standard MBOX files
+
+  # Will create a category if it doesn't exist
+  # create subdirectories in MBOX_SUBDIR with categories
+  CATEGORY_MAPPINGS = {
+    "default" => "uncategorized",
+    # ex: "jobs-folder" => "jobs"
+  }
+
+  unless File.directory?(MBOX_DIR)
+    puts "Cannot find import directory #{MBOX_DIR}. Giving up."
+    exit
+  end
+
+  validates_format_of :email, :with => /\A([^@\s]+)@((?:[-a-z0-9]+\.)+[a-z]{2,})\Z/i, :on => :create
 
   def execute
+    import_categories
     create_email_indices
     create_user_indices
     massage_indices
     import_users
     create_forum_topics
     import_replies
+    # replace_email_addresses # uncomment to replace all email address with @username
+  end
+
+  def import_categories
+    mappings = CATEGORY_MAPPINGS.values - ['uncategorized']
+
+    create_categories(mappings) do |c|
+      {id: c, name: c}
+    end
   end
 
   def open_db
@@ -41,19 +88,32 @@ class ImportScripts::Mbox < ImportScripts::Base
   end
 
   def all_messages
-    files = Dir["#{MBOX_DIR}/messages/*"]
+    files = Dir["#{MBOX_DIR}/#{MBOX_SUBDIR}/*"]
+
+    CATEGORY_MAPPINGS.keys.each do |k|
+      files << Dir["#{MBOX_DIR}/#{k}/*"]
+    end
+
+    files.flatten!
+
+    files.sort!
 
     files.each_with_index do |f, idx|
+      print_warning "\nProcessing: #{f}"
+      start_time = Time.now
+
       if SPLIT_AT.present?
         msg = ""
+        message_count = 0
 
         each_line(f) do |line|
           line = line.scrub
           if line =~ SPLIT_AT
+p            message_count += 1
             if !msg.empty?
               mail = Mail.read_from_string(msg)
-              yield mail
-              print_status(idx, files.size)
+              yield mail, f
+              print_status(idx, files.size, start_time)
               msg = ""
             end
           end
@@ -62,15 +122,15 @@ class ImportScripts::Mbox < ImportScripts::Base
 
         if !msg.empty?
           mail = Mail.read_from_string(msg)
-          yield mail
-          print_status(idx, files.size)
+          yield mail, f
+          print_status(idx, files.size, start_time)
           msg = ""
         end
       else
         raw = File.read(f)
         mail = Mail.read_from_string(raw)
-        yield mail
-        print_status(idx, files.size)
+        yield mail, f
+        print_status(idx, files.size, start_time)
       end
 
     end
@@ -80,13 +140,15 @@ class ImportScripts::Mbox < ImportScripts::Base
     db = open_db
     db.execute "UPDATE emails SET reply_to = null WHERE reply_to = ''"
 
-    rows = db.execute "SELECT msg_id, title, reply_to FROM emails ORDER BY email_date ASC"
+    rows = db.execute "SELECT msg_id, title, reply_to FROM emails ORDER BY datetime(email_date) ASC"
 
     msg_ids = {}
     titles = {}
     rows.each do |row|
       msg_ids[row[0]] = true
-      titles[row[1]] = row[0]
+      if titles[row[1]].nil?
+        titles[row[1]] = row[0]
+      end
     end
 
     # First, any replies where the parent doesn't exist should have that field cleared
@@ -124,12 +186,18 @@ class ImportScripts::Mbox < ImportScripts::Base
     if mail.from.present?
       from_email = mail.from.dup
       if from_email.kind_of?(Array)
-        from_email = from_email.first
+        if from_email[0].nil?
+          print_warning "Cannot find email address (ignoring)!\n#{mail}"
+        else
+          from_email = from_email.first.dup
+          from_email.gsub!(/ at /, '@')
+          from_email.gsub!(/ [at] /, '@')
+          # strip real names in ()s. Todo: read into name
+          from_email.gsub!(/ \(.*$/, '')
+          from_email.gsub!(/ /, '')
+        end
       end
-
-      from_email.gsub!(/ at /, '@')
-      from_email.gsub!(/ \(.*$/, '')
-    end
+p    end
 
     display_names = from.try(:display_names)
     if display_names.present?
@@ -144,6 +212,10 @@ class ImportScripts::Mbox < ImportScripts::Base
     [from_email, from_name]
   end
 
+  def print_warning(message)
+    $stderr.puts "#{message}"
+  end
+
   def create_email_indices
     db = open_db
     db.execute "DROP TABLE IF EXISTS emails"
@@ -155,7 +227,8 @@ class ImportScripts::Mbox < ImportScripts::Base
         title VARCHAR(255) NOT NULL,
         reply_to VARCHAR(955) NULL,
         email_date DATETIME NOT NULL,
-        message TEXT NOT NULL
+        message TEXT NOT NULL,
+        category VARCHAR(255) NOT NULL
       );
     SQL
 
@@ -164,7 +237,12 @@ class ImportScripts::Mbox < ImportScripts::Base
 
     puts "", "creating indices"
 
-    all_messages do |mail|
+    all_messages do |mail, filename|
+
+      directory = filename.sub("#{MBOX_DIR}/", '').split("/")[0]
+
+      category = CATEGORY_MAPPINGS[directory] || CATEGORY_MAPPINGS['default'] || 'uncategorized'
+
       msg_id = mail['Message-ID'].to_s
 
       # Many ways to get a name
@@ -173,10 +251,24 @@ class ImportScripts::Mbox < ImportScripts::Base
       title = clean_title(mail['Subject'].to_s)
       reply_to = mail['In-Reply-To'].to_s
       email_date = mail['date'].to_s
+      email_date = DateTime.parse(email_date).to_s unless email_date.blank?
 
-      db.execute "INSERT OR IGNORE INTO emails (msg_id, from_email, from_name, title, reply_to, email_date, message)
-                  VALUES (?, ?, ?, ?, ?, ?, ?)",
-                 [msg_id, from_email, from_name, title, reply_to, email_date, mail.to_s]
+      if from_email.kind_of?(String)
+        unless from_email.match(/\A[\w+\-.]+@[a-z\d\-]+(\.[a-z\d\-]+)*\.[a-z]+\z/i)
+          print_warning "Ignoring bad email address #{from_email} in #{msg_id}"
+        else
+          db.execute "INSERT OR IGNORE INTO emails (msg_id,
+                                                from_email,
+                                                from_name,
+                                                title,
+                                                reply_to,
+                                                email_date,
+                                                message,
+                                                category)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                     [msg_id, from_email, from_name, title, reply_to, email_date, mail.to_s, category]
+        end
+      end
     end
   ensure
     db.close
@@ -200,7 +292,7 @@ class ImportScripts::Mbox < ImportScripts::Base
   def clean_title(title)
     title ||= ""
     #Strip mailing list name from subject
-    title = title.gsub(/\[[^\]]+\]+/, '').strip
+    title = title.gsub(/\[#{Regexp.escape(LIST_NAME)}\]/, '').strip
 
     original_length = title.length
 
@@ -224,8 +316,8 @@ class ImportScripts::Mbox < ImportScripts::Base
   end
 
   def clean_raw(input)
-
     raw = input.dup
+    raw.scrub!
     raw.gsub!(/-- \nYou received this message because you are subscribed to the Google Groups "[^"]*" group.\nTo unsubscribe from this group and stop receiving emails from it, send an email to [^+@]+\+unsubscribe@googlegroups.com\.\nFor more options, visit https:\/\/groups\.google\.com\/groups\/opt_out\./, '')
 
     raw
@@ -247,12 +339,49 @@ class ImportScripts::Mbox < ImportScripts::Base
         {
           id:           u[1],
           email:        u[1],
-          name:         u[0]
+          name:         u[0],
+          trust_level:  DEFAULT_TRUST_LEVEL,
         }
       end
     end
   ensure
     db.close
+  end
+
+  def replace_email_addresses
+    puts "", "replacing email addresses with @usernames"
+    post = Post.new
+
+    total_count = User.real.count
+    progress_count = 0
+    start_time = Time.now
+
+    # from: https://meta.discourse.org/t/replace-a-string-in-all-posts/48729/17
+    # and https://github.com/discourse/discourse/blob/master/lib/tasks/posts.rake#L114-L136
+    User.find_each do |u|
+      i = 0
+      find = u.email.dup
+      replace = "@#{u.username}"
+      if !replace.include? "@"
+        puts "Skipping #{replace}"
+      end
+
+      found = Post.where("raw ILIKE ?", "%#{find}%")
+      next if found.nil?
+      next if found.count < 1
+
+      found.each do |p|
+        new_raw = p.raw.dup
+        new_raw = new_raw.gsub!(/#{Regexp.escape(find)}/i, replace) || new_raw
+        if new_raw != p.raw
+          p.revise(Discourse.system_user, { raw: new_raw }, { bypass_bump: true })
+          print_warning "\nReplaced #{find} with #{replace} in topic #{p.topic_id}"
+        end
+      end
+      progress_count += 1
+      puts ""
+      print_status(progress_count, total_count, start_time)
+    end
   end
 
   def parse_email(msg)
@@ -273,9 +402,11 @@ class ImportScripts::Mbox < ImportScripts::Base
                                     from_name,
                                     title,
                                     email_date,
-                                    message
+                                    message,
+                                    category
                             FROM emails
-                            WHERE reply_to IS NULL")
+                            WHERE reply_to IS NULL
+                            ORDER BY DATE(email_date)")
 
     topic_count = all_topics.size
 
@@ -296,11 +427,12 @@ class ImportScripts::Mbox < ImportScripts::Base
         next unless selected
         selected = selected.join('') if selected.kind_of?(Array)
 
-        raw = selected.force_encoding(selected.encoding).encode("UTF-8")
-
         title = mail.subject
 
+        username = User.find_by_email(from_email).username
+
         # import the attachments
+        raw = ""
         mail.attachments.each do |attachment|
           tmp = Tempfile.new("discourse-email-attachment")
           begin
@@ -316,11 +448,19 @@ class ImportScripts::Mbox < ImportScripts::Base
           end
         end
 
+        user_id = user_id_from_imported_user_id(from_email) || Discourse::SYSTEM_USER_ID
+
+        raw = selected.force_encoding(selected.encoding).encode("UTF-8")
+        raw = clean_raw(raw)
+        raw = raw.dup.to_s
+        raw.gsub!(/#{from_email}/, "@#{username}")
+        cleaned_email = from_email.dup.sub(/@/,' at ')
+        raw.gsub!(/#{cleaned_email}/, "@#{username}")
         { id: t[0],
           title: clean_title(title),
-          user_id: user_id_from_imported_user_id(from_email) || Discourse::SYSTEM_USER_ID,
+          user_id: user_id,
           created_at: mail.date,
-          category: CATEGORY_ID,
+          category: t[6],
           raw: clean_raw(raw),
           cook_method: Post.cook_methods[:email] }
       end
@@ -341,13 +481,18 @@ class ImportScripts::Mbox < ImportScripts::Base
                                  message,
                                  reply_to
                           FROM emails
-                          WHERE reply_to IS NOT NULL")
+                          WHERE reply_to IS NOT NULL
+                          ORDER BY DATE(email_date)
+                          ")
 
     post_count = replies.size
+
+    puts "Replies: #{post_count}"
 
     batches(BATCH_SIZE) do |offset|
       posts = replies[offset..offset+BATCH_SIZE-1]
       break if posts.nil?
+      break if posts.count < 1
 
       next if all_records_exist? :posts, posts.map {|p| p[0]}
 
@@ -371,7 +516,13 @@ class ImportScripts::Mbox < ImportScripts::Base
         next unless selected
 
         raw = selected.force_encoding(selected.encoding).encode("UTF-8")
+        username = User.find_by_email(from_email).username
 
+        user_id = user_id_from_imported_user_id(from_email) || Discourse::SYSTEM_USER_ID
+        raw = clean_raw(raw).to_s
+        raw.gsub!(/#{from_email}/, "@#{username}")
+        cleaned_email = from_email.dup.sub(/@/,' at ')
+        raw.gsub!(/#{cleaned_email}/, "@#{username}")
         # import the attachments
         mail.attachments.each do |attachment|
           tmp = Tempfile.new("discourse-email-attachment")

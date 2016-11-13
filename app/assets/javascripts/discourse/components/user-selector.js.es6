@@ -1,9 +1,17 @@
+import { observes } from 'ember-addons/ember-computed-decorators';
 import TextField from 'discourse/components/text-field';
 import userSearch from 'discourse/lib/user-search';
+import { getOwner } from 'discourse-common/lib/get-owner';
 
 export default TextField.extend({
+  @observes('usernames')
+  _update() {
+    if (this.get('canReceiveUpdates') === 'true')
+      this.didInsertElement({updateData: true});
+  },
 
-  _initializeAutocomplete: function() {
+  didInsertElement(opts) {
+    this._super();
     var self = this,
         selected = [],
         groups = [],
@@ -23,10 +31,11 @@ export default TextField.extend({
     }
 
     this.$().val(this.get('usernames')).autocomplete({
-      template: this.container.lookup('template:user-selector-autocomplete.raw'),
+      template: getOwner(this).lookup('template:user-selector-autocomplete.raw'),
       disabled: this.get('disabled'),
       single: this.get('single'),
       allowAny: this.get('allowAny'),
+      updateData: (opts && opts.updateData) ? opts.updateData : false,
 
       dataSource: function(term) {
         var results = userSearch({
@@ -63,6 +72,7 @@ export default TextField.extend({
         self.set('hasGroups', hasGroups);
 
         selected = items;
+        if (self.get('onChangeCallback')) self.sendAction('onChangeCallback');
       },
 
       reverseTransform: function(i) {
@@ -70,19 +80,21 @@ export default TextField.extend({
       }
 
     });
-  }.on('didInsertElement'),
+  },
 
-  _removeAutocomplete: function() {
+  willDestroyElement() {
+    this._super();
     this.$().autocomplete('destroy');
-  }.on('willDestroyElement'),
+  },
 
   // THIS IS A HUGE HACK TO SUPPORT CLEARING THE INPUT
+  @observes('usernames')
   _clearInput: function() {
     if (arguments.length > 1) {
       if (Em.isEmpty(this.get("usernames"))) {
         this.$().parent().find("a").click();
       }
     }
-  }.observes("usernames")
+  }
 
 });

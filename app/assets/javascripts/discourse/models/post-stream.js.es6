@@ -1,3 +1,4 @@
+import { ajax } from 'discourse/lib/ajax';
 import DiscourseURL from 'discourse/lib/url';
 import RestModel from 'discourse/models/rest';
 import PostsWithPlaceholders from 'discourse/lib/posts-with-placeholders';
@@ -58,7 +59,7 @@ export default RestModel.extend({
   @computed('hasLoadedData', 'firstPostId', 'posts.[]')
   firstPostPresent(hasLoadedData, firstPostId) {
     if (!hasLoadedData) { return false; }
-    return !!this.get('posts').findProperty('id', firstPostId);
+    return !!this.get('posts').findBy('id', firstPostId);
   },
 
   firstPostNotLoaded: Ember.computed.not('firstPostPresent'),
@@ -70,7 +71,7 @@ export default RestModel.extend({
     if (!hasLoadedData) { return false; }
     if (lastPostId === -1) { return true; }
 
-    return !!this.get('posts').findProperty('id', lastPostId);
+    return !!this.get('posts').findBy('id', lastPostId);
   },
 
   lastPostNotLoaded: Ember.computed.not('loadedAllPosts'),
@@ -79,11 +80,10 @@ export default RestModel.extend({
     Returns a JS Object of current stream filter options. It should match the query
     params for the stream.
   **/
-  @computed('summary', 'show_deleted', 'userFilters.[]')
-  streamFilters(summary, showDeleted) {
+  @computed('summary', 'userFilters.[]')
+  streamFilters(summary) {
     const result = {};
     if (summary) { result.filter = "summary"; }
-    if (showDeleted) { result.show_deleted = true; }
 
     const userFilters = this.get('userFilters');
     if (!Ember.isEmpty(userFilters)) {
@@ -140,7 +140,6 @@ export default RestModel.extend({
 
   cancelFilter() {
     this.set('summary', false);
-    this.set('show_deleted', false);
     this.get('userFilters').clear();
   },
 
@@ -155,11 +154,6 @@ export default RestModel.extend({
     });
   },
 
-  toggleDeleted() {
-    this.toggleProperty('show_deleted');
-    return this.refresh();
-  },
-
   jumpToSecondVisible() {
     const posts = this.get('posts');
     if (posts.length > 1) {
@@ -172,7 +166,6 @@ export default RestModel.extend({
   toggleParticipant(username) {
     const userFilters = this.get('userFilters');
     this.set('summary', false);
-    this.set('show_deleted', true);
 
     let jump = false;
     if (userFilters.contains(username)) {
@@ -207,7 +200,7 @@ export default RestModel.extend({
     if (opts.forceLoad) {
       this.set('loaded', false);
     } else {
-      const postWeWant = this.get('posts').findProperty('post_number', opts.nearPost);
+      const postWeWant = this.get('posts').findBy('post_number', opts.nearPost);
       if (postWeWant) { return Ember.RSVP.resolve(); }
     }
 
@@ -455,7 +448,7 @@ export default RestModel.extend({
     const url = "/posts/" + postId;
     const store = this.store;
 
-    return Discourse.ajax(url).then(p => this.storePost(store.createRecord('post', p)));
+    return ajax(url).then(p => this.storePost(store.createRecord('post', p)));
   },
 
   /**
@@ -497,7 +490,7 @@ export default RestModel.extend({
       // need to insert into stream
       const url = "/posts/" + postId;
       const store = this.store;
-      return Discourse.ajax(url).then(p => {
+      return ajax(url).then(p => {
         const post = store.createRecord('post', p);
         const stream = this.get("stream");
         const posts = this.get("posts");
@@ -538,7 +531,7 @@ export default RestModel.extend({
       const url = "/posts/" + postId;
       const store = this.store;
 
-      return Discourse.ajax(url).then(p => {
+      return ajax(url).then(p => {
         this.storePost(store.createRecord('post', p));
       }).catch(() => {
         this.removePosts([existing]);
@@ -555,7 +548,7 @@ export default RestModel.extend({
     if (existing && existing.updated_at !== updatedAt) {
       const url = "/posts/" + postId;
       const store = this.store;
-      return Discourse.ajax(url).then(p => this.storePost(store.createRecord('post', p)));
+      return ajax(url).then(p => this.storePost(store.createRecord('post', p)));
     }
     return resolved;
   },
@@ -727,7 +720,7 @@ export default RestModel.extend({
     const url = "/t/" + this.get('topic.id') + "/posts.json";
     const data = { post_ids: postIds };
     const store = this.store;
-    return Discourse.ajax(url, {data}).then(result => {
+    return ajax(url, {data}).then(result => {
       const posts = Ember.get(result, "post_stream.posts");
       if (posts) {
         posts.forEach(p => this.storePost(store.createRecord('post', p)));

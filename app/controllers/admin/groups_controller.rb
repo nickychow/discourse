@@ -1,10 +1,9 @@
 class Admin::GroupsController < Admin::AdminController
 
   def index
-    groups = Group.order(:name)
+    groups = Group.order(:name).where("id <> ?", Group::AUTO_GROUPS[:everyone])
 
-    if search = params[:search]
-      search = search.to_s
+    if search = params[:search].to_s
       groups = groups.where("name ILIKE ?", "%#{search}%")
     end
 
@@ -64,6 +63,10 @@ class Admin::GroupsController < Admin::AdminController
 
     title = params[:title] if params[:title].present?
     group.title = group.automatic ? nil : title
+
+    group.flair_url      = params[:flair_url].presence
+    group.flair_bg_color = params[:flair_bg_color].presence
+    group.flair_color    = params[:flair_color].presence
 
     if group.save
       Group.reset_counters(group.id, :group_users)

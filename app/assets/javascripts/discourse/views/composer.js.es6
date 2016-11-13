@@ -12,7 +12,8 @@ const ComposerView = Ember.View.extend({
                       'composer.loading',
                       'composer.canEditTitle:edit-title',
                       'composer.createdPost:created-post',
-                      'composer.creatingTopic:topic'],
+                      'composer.creatingTopic:topic',
+                      'composer.whisper:composing-whisper'],
 
   composer: Em.computed.alias('controller.model'),
 
@@ -22,7 +23,6 @@ const ComposerView = Ember.View.extend({
   },
 
   movePanels(sizePx) {
-
     $('#main-outlet').css('padding-bottom', sizePx);
 
     // signal the progress bar it should move!
@@ -103,6 +103,13 @@ const ComposerView = Ember.View.extend({
       triggerOpen();
     });
     positioningWorkaround(this.$());
+
+    this.appEvents.on('composer:resize', this, this.resize);
+  },
+
+  willDestroyElement() {
+    this._super();
+    this.appEvents.off('composer:resize', this, this.resize);
   },
 
   click() {

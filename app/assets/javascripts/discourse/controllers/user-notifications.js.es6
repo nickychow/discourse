@@ -1,15 +1,27 @@
-export default Ember.ArrayController.extend({
-  needs: ['application'],
+import { ajax } from 'discourse/lib/ajax';
+import { default as computed, observes } from 'ember-addons/ember-computed-decorators';
 
-  _showFooter: function() {
-    this.set("controllers.application.showFooter", !this.get("model.canLoadMore"));
-  }.observes("model.canLoadMore"),
+export default Ember.Controller.extend({
+  application: Ember.inject.controller(),
 
-  currentPath: Em.computed.alias('controllers.application.currentPath'),
+  @observes('model.canLoadMore')
+  _showFooter() {
+    this.set("application.showFooter", !this.get("model.canLoadMore"));
+  },
+
+  @computed('model.content.length')
+  hasNotifications(length) {
+    return length > 0;
+  },
+
+  @computed('model.content.@each.read')
+  allNotificationsRead() {
+    return !this.get('model.content').some(notification => !notification.get('read'));
+  },
 
   actions: {
     resetNew() {
-      Discourse.ajax('/notifications/mark-read', { method: 'PUT' }).then(() => {
+      ajax('/notifications/mark-read', { method: 'PUT' }).then(() => {
         this.setEach('read', true);
       });
     },

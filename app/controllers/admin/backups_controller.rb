@@ -95,7 +95,7 @@ class Admin::BackupsController < Admin::AdminController
 
   def readonly
     enable = params.fetch(:enable).to_s == "true"
-    enable ? Discourse.enable_readonly_mode : Discourse.disable_readonly_mode
+    enable ? Discourse.enable_readonly_mode(user_enabled: true) : Discourse.disable_readonly_mode(user_enabled: true)
     render nothing: true
   end
 
@@ -119,6 +119,7 @@ class Admin::BackupsController < Admin::AdminController
 
     return render status: 415, text: I18n.t("backup.backup_file_should_be_tar_gz") unless /\.(tar\.gz|t?gz)$/i =~ filename
     return render status: 415, text: I18n.t("backup.not_enough_space_on_disk")     unless has_enough_space_on_disk?(total_size)
+    return render status: 415, text: I18n.t("backup.invalid_filename") unless !!(/^[a-zA-Z0-9\._\-]+$/ =~ filename)
 
     file               = params.fetch(:file)
     identifier         = params.fetch(:resumableIdentifier)

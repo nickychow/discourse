@@ -4,6 +4,8 @@ import Draft from 'discourse/models/draft';
 import Composer from 'discourse/models/composer';
 import { default as computed, observes } from 'ember-addons/ember-computed-decorators';
 import { relativeAge } from 'discourse/lib/formatter';
+import InputValidation from 'discourse/models/input-validation';
+import { getOwner } from 'discourse-common/lib/get-owner';
 
 function loadDraft(store, opts) {
   opts = opts || {};
@@ -49,7 +51,9 @@ export function addPopupMenuOptionsCallback(callback) {
 }
 
 export default Ember.Controller.extend({
-  needs: ['modal', 'topic', 'application'],
+  topicController: Ember.inject.controller('topic'),
+  application: Ember.inject.controller(),
+
   replyAsNewTopicDraft: Em.computed.equal('model.draftKey', Composer.REPLY_AS_NEW_TOPIC_KEY),
   checkedMessages: false,
   messageCount: null,
@@ -61,28 +65,46 @@ export default Ember.Controller.extend({
   isUploading: false,
   topic: null,
   linkLookup: null,
+  whisperOrUnlistTopic: Ember.computed.or('model.whisper', 'model.unlistTopic'),
+
+  @computed('model.replyingToTopic', 'model.creatingPrivateMessage', 'model.targetUsernames')
+  focusTarget(replyingToTopic, creatingPM, usernames) {
+    if (this.capabilities.isIOS) { return "none"; }
+
+    // Focus on usernames if it's blank or if it's just you
+    usernames = usernames || "";
+    if (creatingPM && usernames.length === 0 || usernames === this.currentUser.get('username')) {
+      return 'usernames';
+    }
+
+    if (replyingToTopic) {
+      return 'reply';
+    }
+
+    return 'title';
+  },
 
   showToolbar: Em.computed({
-    get(){
-      const keyValueStore = this.container.lookup('key-value-store:main');
+    get() {
+      const keyValueStore = getOwner(this).lookup('key-value-store:main');
       const storedVal = keyValueStore.get("toolbar-enabled");
       if (this._toolbarEnabled === undefined && storedVal === undefined) {
         // iPhone 6 is 375, anything narrower and toolbar should
         // be default disabled.
         // That said we should remember the state
-        this._toolbarEnabled = $(window).width() > 370;
+        this._toolbarEnabled = $(window).width() > 370 && !this.capabilities.isAndroid;
       }
       return this._toolbarEnabled || storedVal === "true";
     },
     set(key, val){
-      const keyValueStore = this.container.lookup('key-value-store:main');
+      const keyValueStore = getOwner(this).lookup('key-value-store:main');
       this._toolbarEnabled = val;
       keyValueStore.set({key: "toolbar-enabled", value: val ? "true" : "false"});
       return val;
     }
   }),
 
-  topicModel: Ember.computed.alias('controllers.topic.model'),
+  topicModel: Ember.computed.alias('topicController.model'),
 
   @computed('model.canEditTitle', 'model.creatingPrivateMessage')
   canEditTags(canEditTitle, creatingPrivateMessage) {
@@ -92,10 +114,26 @@ export default Ember.Controller.extend({
             !creatingPrivateMessage;
   },
 
-  @computed('model.action')
-  canWhisper(action) {
+  @computed('model.whisper', 'model.unlistTopic')
+  whisperOrUnlistTopicText(whisper, unlistTopic) {
+    if (whisper) {
+      return I18n.t("composer.whisper");
+    } else if (unlistTopic) {
+      return I18n.t("composer.unlist");
+    }
+  },
+
+  @computed
+  isStaffUser() {
     const currentUser = this.currentUser;
-    return currentUser && currentUser.get('staff') && this.siteSettings.enable_whispers && action === Composer.REPLY;
+    return currentUser && currentUser.get('staff');
+  },
+
+  canUnlistTopic: Em.computed.and('model.creatingTopic', 'isStaffUser'),
+
+  @computed('model.action', 'isStaffUser')
+  canWhisper(action, isStaffUser) {
+    return isStaffUser && this.siteSettings.enable_whispers && action === Composer.REPLY;
   },
 
   @computed("popupMenuOptions")
@@ -115,10 +153,19 @@ export default Ember.Controller.extend({
     return option;
   },
 
-  @computed("model.composeState")
+  @computed("model.composeState", "model.creatingTopic")
   popupMenuOptions(composeState) {
     if (composeState === 'open') {
       let options = [];
+
+      options.push(this._setupPopupMenuOption(() => {
+        return {
+          action: 'toggleInvisible',
+          icon: 'eye-slash',
+          label: 'composer.toggle_unlisted',
+          condition: "canUnlistTopic"
+        };
+      }));
 
       options.push(this._setupPopupMenuOption(() => {
         return {
@@ -191,6 +238,10 @@ export default Ember.Controller.extend({
 
     toggleWhisper() {
       this.toggleProperty('model.whisper');
+    },
+
+    toggleInvisible() {
+      this.toggleProperty('model.unlistTopic');
     },
 
     toggleToolbar() {
@@ -355,7 +406,7 @@ export default Ember.Controller.extend({
 
         if (currentTopic) {
           buttons.push({
-            "label": I18n.t("composer.reply_here") + "<br/><div class='topic-title overflow-ellipsis'>" + Discourse.Utilities.escapeExpression(currentTopic.get('title')) + "</div>",
+            "label": I18n.t("composer.reply_here") + "<br/><div class='topic-title overflow-ellipsis'>" + currentTopic.get('fancyTitle') + "</div>",
             "class": "btn btn-reply-here",
             "callback": function() {
               composer.set('topic', currentTopic);
@@ -366,7 +417,7 @@ export default Ember.Controller.extend({
         }
 
         buttons.push({
-          "label": I18n.t("composer.reply_original") + "<br/><div class='topic-title overflow-ellipsis'>" + Discourse.Utilities.escapeExpression(this.get('model.topic.title')) + "</div>",
+          "label": I18n.t("composer.reply_original") + "<br/><div class='topic-title overflow-ellipsis'>" + this.get('model.topic.fancyTitle') + "</div>",
           "class": "btn-primary btn-reply-on-original",
           "callback": function() {
             self.save(true);
@@ -435,7 +486,7 @@ export default Ember.Controller.extend({
       self.appEvents.one('composer:will-open', () => bootbox.alert(error));
     });
 
-    if (this.get('controllers.application.currentRouteName').split('.')[0] === 'topic' &&
+    if (this.get('application.currentRouteName').split('.')[0] === 'topic' &&
         composer.get('topic.id') === this.get('topicModel.id')) {
       staged = composer.get('stagedPost');
     }
@@ -473,15 +524,18 @@ export default Ember.Controller.extend({
       alert("composer was opened without a draft key");
       throw "composer opened without a proper draft key";
     }
+    const self = this;
+    let composerModel = this.get('model');
+
+    if (opts.ignoreIfChanged && composerModel && composerModel.composeState !== Composer.CLOSED) {
+      return;
+    }
 
     // If we show the subcategory list, scope the categories drop down to
     // the category we opened the composer with.
     if (this.siteSettings.show_subcategory_list && opts.draftKey !== 'reply_as_new_topic') {
       this.set('scopedCategoryId', opts.categoryId);
     }
-
-    const self = this;
-    let composerModel = this.get('model');
 
     this.setProperties({ showEditReason: false, editReason: null });
 
@@ -524,6 +578,12 @@ export default Ember.Controller.extend({
         }).then(resolve, reject);
       }
 
+      if (composerModel) {
+        if (composerModel.get('action') !== opts.action) {
+          composerModel.setProperties({ unlistTopic: false, whisper: false });
+        }
+      }
+
       self._setModel(composerModel, opts);
       resolve();
     });
@@ -558,10 +618,10 @@ export default Ember.Controller.extend({
       let category;
 
       if (!splitCategory[1]) {
-        category = this.site.get('categories').findProperty('nameLower', splitCategory[0].toLowerCase());
+        category = this.site.get('categories').findBy('nameLower', splitCategory[0].toLowerCase());
       } else {
         const categories = Discourse.Category.list();
-        const mainCategory = categories.findProperty('nameLower', splitCategory[0].toLowerCase());
+        const mainCategory = categories.findBy('nameLower', splitCategory[0].toLowerCase());
         category = categories.find(function(item) {
           return item && item.get('nameLower') === splitCategory[1].toLowerCase() && item.get('parent_category_id') === mainCategory.id;
         });
@@ -640,7 +700,7 @@ export default Ember.Controller.extend({
   @computed('model.categoryId', 'lastValidatedAt')
   categoryValidation(categoryId, lastValidatedAt) {
     if( !this.siteSettings.allow_uncategorized_topics && !categoryId) {
-      return Discourse.InputValidation.create({ failed: true, reason: I18n.t('composer.error.category_missing'), lastShownAt: lastValidatedAt });
+      return InputValidation.create({ failed: true, reason: I18n.t('composer.error.category_missing'), lastShownAt: lastValidatedAt });
     }
   },
 

@@ -146,6 +146,10 @@ class ImportScripts::Base
     admin
   end
 
+  def created_group(group)
+    # override if needed
+  end
+
   # Iterate through a list of groups to be imported.
   # Takes a collection and yields to the block for each element.
   # Block should return a hash with the attributes for each element.
@@ -165,6 +169,7 @@ class ImportScripts::Base
         skipped += 1
       else
         new_group = create_group(g, g[:id])
+        created_group(new_group)
 
         if new_group.valid?
           @lookup.add_group(g[:id].to_s, new_group)
@@ -218,6 +223,10 @@ class ImportScripts::Base
     conn.exec('DROP TABLE import_ids')
   end
 
+  def created_user(user)
+    # override if needed
+  end
+
   # Iterate through a list of user records to be imported.
   # Takes a collection, and yields to the block for each element.
   # Block should return a hash with the attributes for the User model.
@@ -243,6 +252,7 @@ class ImportScripts::Base
           skipped += 1
         elsif u[:email].present?
           new_user = create_user(u, import_id)
+          created_user(new_user)
 
           if new_user && new_user.valid? && new_user.user_profile && new_user.user_profile.valid?
             @lookup.add_user(import_id.to_s, new_user)
@@ -274,7 +284,7 @@ class ImportScripts::Base
     merge = opts.delete(:merge)
     post_create_action = opts.delete(:post_create_action)
 
-    existing = User.where(email: opts[:email].downcase, username: opts[:username]).first
+    existing = User.where("email = ? OR username = ?", opts[:email].downcase, opts[:username]).first
     return existing if existing && (merge || existing.custom_fields["import_id"].to_i == import_id.to_i)
 
     bio_raw = opts.delete(:bio_raw)
@@ -282,10 +292,14 @@ class ImportScripts::Base
     location = opts.delete(:location)
     avatar_url = opts.delete(:avatar_url)
 
+    original_username = opts[:username]
+    original_name = opts[:name]
+
     # Allow the || operations to work with empty strings ''
     opts[:username] = nil if opts[:username].blank?
 
     opts[:name] = User.suggest_name(opts[:email]) unless opts[:name]
+
     if opts[:username].blank? ||
       opts[:username].length < User.username_length.begin ||
       opts[:username].length > User.username_length.end ||
@@ -294,6 +308,9 @@ class ImportScripts::Base
 
       opts[:username] = UserNameSuggester.suggest(opts[:username] || opts[:name].presence || opts[:email])
     end
+
+    opts[:name] = original_username if original_name.blank? && opts[:username] != original_username
+
     opts[:email] = opts[:email].downcase
     opts[:trust_level] = TrustLevel[1] unless opts[:trust_level]
     opts[:active] = opts.fetch(:active, true)
@@ -303,7 +320,7 @@ class ImportScripts::Base
     u = User.new(opts)
     (opts[:custom_fields] || {}).each { |k, v| u.custom_fields[k] = v }
     u.custom_fields["import_id"] = import_id
-    u.custom_fields["import_username"] = opts[:username] if opts[:username].present?
+    u.custom_fields["import_username"] = opts[:username] if original_username.present?
     u.custom_fields["import_avatar_url"] = avatar_url if avatar_url.present?
     u.custom_fields["import_pass"] = opts[:password] if opts[:password].present?
 
@@ -340,6 +357,10 @@ class ImportScripts::Base
     u # If there was an error creating the user, u.errors has the messages
   end
 
+  def created_category(category)
+    # override if needed
+  end
+
   # Iterates through a collection to create categories.
   # The block should return a hash with attributes for the new category.
   # Required fields are :id and :name, where :id is the id of the
@@ -370,7 +391,8 @@ class ImportScripts::Base
           params[:parent_category_id] = top.id if top
         end
 
-        create_category(params, params[:id])
+        new_category = create_category(params, params[:id])
+        created_category(new_category)
 
         created += 1
       end
@@ -389,12 +411,13 @@ class ImportScripts::Base
 
     new_category = Category.new(
       name: opts[:name],
-      user_id: opts[:user_id] || opts[:user].try(:id) || -1,
+      user_id: opts[:user_id] || opts[:user].try(:id) || Discourse::SYSTEM_USER_ID,
       position: opts[:position],
       description: opts[:description],
       parent_category_id: opts[:parent_category_id],
       color: opts[:color] || "AB9364",
       text_color: opts[:text_color] || "FFF",
+      read_restricted: opts[:read_restricted] || false,
     )
 
     new_category.custom_fields["import_id"] = import_id if import_id
@@ -466,7 +489,7 @@ class ImportScripts::Base
     [created, skipped]
   end
 
-  STAFF_GUARDIAN = Guardian.new(User.find(-1))
+  STAFF_GUARDIAN ||= Guardian.new(Discourse.system_user)
 
   def create_post(opts, import_id)
     user = User.find(opts[:user_id])
@@ -575,15 +598,21 @@ class ImportScripts::Base
 
   def update_user_stats
     puts "", "Updating topic reply counts..."
+
+    start_time = Time.now
+    progress_count = 0
+    total_count = User.real.count
+
     User.find_each do |u|
       u.create_user_stat if u.user_stat.nil?
       us = u.user_stat
       us.update_topic_reply_count
       us.save
-      print "."
+      progress_count += 1
+      print_status(progress_count, total_count, start_time)
     end
 
-    puts "Updating first_post_created_at..."
+    puts "." "Updating first_post_created_at..."
 
     sql = <<-SQL
       WITH sub AS (
@@ -705,9 +734,9 @@ class ImportScripts::Base
     total_count = User.count
     progress_count = 0
 
-    User.find_each do |user|
+    User.includes(:user_stat).find_each do |user|
       begin
-        user.change_trust_level!(0) if Post.where(user_id: user.id).count == 0
+        user.update_columns(trust_level: 0) if user.trust_level > 0 && user.post_count == 0
       rescue Discourse::InvalidAccess
         nil
       end

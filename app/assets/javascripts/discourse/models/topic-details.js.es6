@@ -1,3 +1,4 @@
+import { ajax } from 'discourse/lib/ajax';
 /**
   A model representing a Topic's details that aren't always present, such as a list of participants.
   When showing topics in lists and such this information should not be required.
@@ -57,7 +58,7 @@ const TopicDetails = RestModel.extend({
   updateNotifications(v) {
     this.set('notification_level', v);
     this.set('notifications_reason_id', null);
-    return Discourse.ajax("/t/" + (this.get('topic.id')) + "/notifications", {
+    return ajax("/t/" + (this.get('topic.id')) + "/notifications", {
       type: 'POST',
       data: { notification_level: v }
     });
@@ -67,11 +68,11 @@ const TopicDetails = RestModel.extend({
     const groups = this.get('allowed_groups');
     const name = group.name;
 
-    return Discourse.ajax("/t/" + this.get('topic.id') + "/remove-allowed-group", {
+    return ajax("/t/" + this.get('topic.id') + "/remove-allowed-group", {
       type: 'PUT',
       data: { name: name }
     }).then(() => {
-      groups.removeObject(groups.findProperty('name', name));
+      groups.removeObject(groups.findBy('name', name));
     });
   },
 
@@ -79,11 +80,11 @@ const TopicDetails = RestModel.extend({
     const users = this.get('allowed_users');
     const username = user.get('username');
 
-    return Discourse.ajax("/t/" + this.get('topic.id') + "/remove-allowed-user", {
+    return ajax("/t/" + this.get('topic.id') + "/remove-allowed-user", {
       type: 'PUT',
       data: { username: username }
     }).then(() => {
-      users.removeObject(users.findProperty('username', username));
+      users.removeObject(users.findBy('username', username));
     });
   }
 });

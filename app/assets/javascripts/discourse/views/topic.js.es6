@@ -2,6 +2,7 @@ import AddCategoryClass from 'discourse/mixins/add-category-class';
 import AddArchetypeClass from 'discourse/mixins/add-archetype-class';
 import ClickTrack from 'discourse/lib/click-track';
 import Scrolling from 'discourse/mixins/scrolling';
+import { selectedText } from 'discourse/lib/utilities';
 
 const TopicView = Ember.View.extend(AddCategoryClass, AddArchetypeClass, Scrolling, {
   templateName: 'topic',
@@ -50,7 +51,7 @@ const TopicView = Ember.View.extend(AddCategoryClass, AddArchetypeClass, Scrolli
       // bypass if we are selecting stuff
       const selection = window.getSelection && window.getSelection();
       if (selection.type === "Range" || selection.rangeCount > 0) {
-        if (Discourse.Utilities.selectedText() !== "") {
+        if (selectedText() !== "") {
           return true;
         }
       }
@@ -92,9 +93,6 @@ const TopicView = Ember.View.extend(AddCategoryClass, AddArchetypeClass, Scrolli
     this.set('docAt', false);
   },
 
-  offset: 0,
-  hasScrolled: Em.computed.gt("offset", 0),
-
   showTopicInHeader(topic, offset) {
     if (this.get('docAt')) {
       return offset >= this.get('docAt') || topic.get('postStream.firstPostNotLoaded');
@@ -117,7 +115,7 @@ const TopicView = Ember.View.extend(AddCategoryClass, AddArchetypeClass, Scrolli
       }
     }
 
-    this.set("offset", offset);
+    this.set('controller.hasScrolled', offset > 0);
 
     const topic = this.get('topic');
     const showTopic = this.showTopicInHeader(topic, offset);

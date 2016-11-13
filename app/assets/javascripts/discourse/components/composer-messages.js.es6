@@ -8,18 +8,19 @@ export default Ember.Component.extend({
   queuedForTyping: null,
   _lastSimilaritySearch: null,
   _similarTopicsMessage: null,
+  _yourselfConfirm: null,
   similarTopics: null,
 
   hidden: Ember.computed.not('composer.viewOpen'),
 
   didInsertElement() {
     this._super();
-    this.reset();
     this.appEvents.on('composer:typed-reply', this, this._typedReply);
     this.appEvents.on('composer:opened', this, this._findMessages);
     this.appEvents.on('composer:find-similar', this, this._findSimilar);
     this.appEvents.on('composer-messages:close', this, this._closeTop);
     this.appEvents.on('composer-messages:create', this, this._create);
+    Ember.run.scheduleOnce('afterRender', this, this.reset);
   },
 
   willDestroyElement() {
@@ -83,6 +84,27 @@ export default Ember.Component.extend({
   // Some messages only get shown after being typed.
   _typedReply() {
     if (this.isDestroying || this.isDestroyed) { return; }
+
+    const composer = this.get('composer');
+    if (composer.get('privateMessage')) {
+      let usernames = composer.get('targetUsernames');
+
+      if (usernames) {
+        usernames = usernames.split(',');
+      }
+
+      if (usernames && usernames.length === 1 && usernames[0] === this.currentUser.get('username')) {
+
+        const message = this._yourselfConfirm || composer.store.createRecord('composer-message', {
+          id: 'yourself_confirm',
+          templateName: 'custom-body',
+          title: I18n.t('composer.yourself_confirm.title'),
+          body: I18n.t('composer.yourself_confirm.body')
+        });
+        this.send('popup', message);
+      }
+    }
+
     this.get('queuedForTyping').forEach(msg => this.send("popup", msg));
   },
 

@@ -1,15 +1,16 @@
 import PostCooked from 'discourse/widgets/post-cooked';
 import DecoratorHelper from 'discourse/widgets/decorator-helper';
 import { createWidget, applyDecorators } from 'discourse/widgets/widget';
-import { iconNode } from 'discourse/helpers/fa-icon';
+import { iconNode } from 'discourse/helpers/fa-icon-node';
 import { transformBasicPost } from 'discourse/lib/transform-post';
 import { h } from 'virtual-dom';
 import DiscourseURL from 'discourse/lib/url';
 import { dateNode } from 'discourse/helpers/node';
+import { translateSize, avatarUrl } from 'discourse/lib/utilities';
 
 export function avatarImg(wanted, attrs) {
-  const size = Discourse.Utilities.translateSize(wanted);
-  const url = Discourse.Utilities.avatarUrl(attrs.template, size);
+  const size = translateSize(wanted);
+  const url = avatarUrl(attrs.template, size);
 
   // We won't render an invalid url
   if (!url || url.length === 0) { return; }
@@ -76,6 +77,7 @@ createWidget('reply-to-tab', {
   }
 });
 
+
 createWidget('post-avatar', {
   tagName: 'div.topic-avatar',
 
@@ -96,7 +98,15 @@ createWidget('post-avatar', {
       });
     }
 
-    return [body, h('div.poster-avatar-extra')];
+    const result = [body];
+
+    if (attrs.primary_group_flair_url || attrs.primary_group_flair_bg_color) {
+      result.push(this.attach('avatar-flair', attrs));
+    }
+
+    result.push(h('div.poster-avatar-extra'));
+
+    return result;
   }
 });
 
@@ -267,7 +277,9 @@ createWidget('post-contents', {
 
     const repliesBelow = state.repliesBelow;
     if (repliesBelow.length) {
-      result.push(h('section.embedded-posts.bottom', repliesBelow.map(p => this.attach('embedded-post', p))));
+      result.push(h('section.embedded-posts.bottom', repliesBelow.map(p => {
+        return this.attach('embedded-post', p, { model: this.store.createRecord('post', p) });
+      })));
     }
 
     return result;
@@ -338,7 +350,10 @@ createWidget('post-article', {
   html(attrs, state) {
     const rows = [h('a.tabLoc', { attributes: { href: ''} })];
     if (state.repliesAbove.length) {
-      const replies = state.repliesAbove.map(p => this.attach('embedded-post', p, { state: { above: true } }));
+      const replies = state.repliesAbove.map(p => {
+        return this.attach('embedded-post', p, { model: this.store.createRecord('post', p), state: { above: true } });
+      });
+
       rows.push(h('div.row', h('section.embedded-posts.top.topic-body.offset2', replies)));
     }
 
@@ -395,6 +410,7 @@ export default createWidget('post', {
     if (attrs.cloaked) { return 'cloaked-post'; }
     const classNames = ['topic-post', 'clearfix'];
 
+    if (attrs.id === -1 || attrs.isSaving) { classNames.push('staged'); }
     if (attrs.selected) { classNames.push('selected'); }
     if (attrs.topicOwner) { classNames.push('topic-owner'); }
     if (attrs.hidden) { classNames.push('post-hidden'); }
@@ -447,11 +463,11 @@ export default createWidget('post', {
 
   undoPostAction(typeId) {
     const post = this.model;
-    return post.get('actions_summary').findProperty('id', typeId).undo(post);
+    return post.get('actions_summary').findBy('id', typeId).undo(post);
   },
 
   deferPostActionFlags(typeId) {
     const post = this.model;
-    return post.get('actions_summary').findProperty('id', typeId).deferFlags(post);
+    return post.get('actions_summary').findBy('id', typeId).deferFlags(post);
   }
 });
