@@ -151,7 +151,7 @@ const Group = Discourse.Model.extend({
   },
 
   setNotification(notification_level) {
-    this.set("notification_level", notification_level);
+    this.set("group_user.notification_level", notification_level);
     return ajax(`/groups/${this.get("name")}/notifications`, {
       data: { notification_level },
       type: "POST"
@@ -166,10 +166,6 @@ Group.reopenClass({
     });
   },
 
-  findGroupCounts(name) {
-    return ajax("/groups/" + name + "/counts.json").then(result => Em.Object.create(result.counts));
-  },
-
   find(name) {
     return ajax("/groups/" + name + ".json").then(result => Group.create(result.basic_group));
   },
@@ -181,7 +177,11 @@ Group.reopenClass({
         offset: offset || 0
       }
     });
-  }
+  },
+
+  mentionable(name) {
+    return ajax(`/groups/${name}/mentionable`, { data: { name } });
+  },
 });
 
 export default Group;

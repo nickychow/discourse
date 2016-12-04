@@ -46,10 +46,6 @@ const ApplicationRoute = Discourse.Route.extend(OpenComposer, {
       return this._super();
     },
 
-    showTopicEntrance(data) {
-      this.controllerFor('topic-entrance').send('show', data);
-    },
-
     postWasEnqueued(details) {
       const title = details.reason ? 'queue_reason.' + details.reason + '.title' : 'queue.approval.title';
       showModal('post-enqueued', {model: details, title });
@@ -131,12 +127,12 @@ const ApplicationRoute = Discourse.Route.extend(OpenComposer, {
     },
 
     editCategory(category) {
-      Category.reloadById(category.get('id')).then((atts) => {
+      Category.reloadById(category.get('id')).then(atts => {
         const model = this.store.createRecord('category', atts.category);
         model.setupGroupsAndPermissions();
         this.site.updateCategory(model);
-        showModal('editCategory', { model });
-        this.controllerFor('editCategory').set('selectedTab', 'general');
+        showModal('edit-category', { model });
+        this.controllerFor('edit-category').set('selectedTab', 'general');
       });
     },
 
@@ -150,10 +146,9 @@ const ApplicationRoute = Discourse.Route.extend(OpenComposer, {
     },
 
     changeBulkTemplate(w) {
-      const controllerName = w.replace('modal/', ''),
-            factory = getOwner(this).lookupFactory('controller:' + controllerName);
-
-      this.render(w, {into: 'modal/topic-bulk-actions', outlet: 'bulkOutlet', controller: factory ? controllerName : 'topic-bulk-actions'});
+      const controllerName = w.replace('modal/', '');
+      const controller = getOwner(this).lookup('controller:' + controllerName);
+      this.render(w, {into: 'modal/topic-bulk-actions', outlet: 'bulkOutlet', controller: controller ? controllerName : 'topic-bulk-actions'});
     },
 
     createNewTopicViaParams(title, body, category_id, category, tags) {
@@ -177,7 +172,6 @@ const ApplicationRoute = Discourse.Route.extend(OpenComposer, {
     this.render('application');
     this.render('user-card', { into: 'application', outlet: 'user-card' });
     this.render('modal', { into: 'application', outlet: 'modal' });
-    this.render('topic-entrance', { into: 'application', outlet: 'topic-entrance' });
     this.render('composer', { into: 'application', outlet: 'composer' });
   },
 

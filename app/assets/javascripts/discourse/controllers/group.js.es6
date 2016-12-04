@@ -12,7 +12,6 @@ var Tab = Em.Object.extend({
   }
 });
 
-
 export default Ember.Controller.extend({
   counts: null,
   showing: 'members',
@@ -24,12 +23,24 @@ export default Ember.Controller.extend({
     Tab.create({ name: 'messages', requiresMembership: true })
   ],
 
-  @observes('counts')
-  countsChanged() {
-    const counts = this.get('counts');
-    this.get('tabs').forEach(tab => {
-      tab.set('count', counts.get(tab.get('name')));
-    });
+  @computed('model.name')
+  groupName(name) {
+    return name.capitalize();
+  },
+
+  @computed('model.name', 'model.flair_url', 'model.flair_bg_color', 'model.flair_color')
+  avatarFlairAttributes(groupName, flairURL, flairBgColor, flairColor) {
+    return {
+      primary_group_flair_url: flairURL,
+      primary_group_flair_bg_color: flairBgColor,
+      primary_group_flair_color: flairColor,
+      primary_group_name: groupName
+    };
+  },
+
+  @observes('model.user_count')
+  _setMembersTabCount() {
+    this.get('tabs')[0].set('count', this.get('model.user_count'));
   },
 
   @observes('showing')
@@ -41,8 +52,16 @@ export default Ember.Controller.extend({
     });
   },
 
-  @computed('model.is_member')
-  getTabs(isMember) {
-    return this.get('tabs').filter(t => isMember || !t.get('requiresMembership'));
+  @computed('model.is_group_user')
+  getTabs(isGroupUser) {
+    return this.get('tabs').filter(t => {
+      let isMember = false;
+
+      if (this.currentUser) {
+        isMember = this.currentUser.admin || isGroupUser;
+      }
+
+      return isMember || !t.get('requiresMembership');
+    });
   }
 });

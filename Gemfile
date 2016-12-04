@@ -48,7 +48,7 @@ gem 'onebox'
 gem 'http_accept_language', '~>2.0.5', require: false
 
 gem 'ember-rails', '0.18.5'
-gem 'ember-source', '1.12.2'
+gem 'ember-source', '2.4.6'
 gem 'barber'
 gem 'babel-transpiler'
 
@@ -66,7 +66,7 @@ gem 'aws-sdk', require: false
 gem 'excon', require: false
 gem 'unf', require: false
 
-gem 'email_reply_trimmer', '0.1.4'
+gem 'email_reply_trimmer', '0.1.6'
 
 # note: for image_optim to correctly work you need to follow
 # https://github.com/toy/image_optim

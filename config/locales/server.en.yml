@@ -599,6 +599,14 @@ en:
       description: 'Vote for this post'
       long_form: 'voted for this post'
 
+  user_activity:
+    no_bookmarks:
+      self: "You have no bookmarked posts, bookmarking posts allows you to easily access them later on."
+      others: "No bookmarks."
+    no_likes_given:
+      self: "You have not liked any posts."
+      others: "No liked posts."
+
   topic_flag_types:
     spam:
       title: 'Spam'
@@ -1246,9 +1254,13 @@ en:
     attachment_content_type_blacklist: "List of keywords used to blacklist attachments based on the content type."
     attachment_filename_blacklist: "List of keywords used to blacklist attachments based on the filename."
 
+    enable_forwarded_emails: "[BETA] Allow users to create a topic by forwarding an email in."
+    always_show_trimmed_content: "Always show trimmed part of incoming emails. WARNING: might reveal email addresses."
+
     manual_polling_enabled: "Push emails using the API for email replies."
     pop3_polling_enabled: "Poll via POP3 for email replies."
     pop3_polling_ssl: "Use SSL while connecting to the POP3 server. (Recommended)"
+    pop3_polling_openssl_verify: "Verify TLS server certificate (Default: enabled)"
     pop3_polling_period_mins: "The period in minutes between checking the POP3 account for email. NOTE: requires restart."
     pop3_polling_port: "The port to poll a POP3 account on."
     pop3_polling_host: "The host to poll for email via POP3."
@@ -1274,7 +1286,9 @@ en:
     allow_animated_thumbnails: "Generates animated thumbnails of animated gifs."
     default_avatars: "URLs to avatars that will be used by default for new users until they change them."
     automatically_download_gravatars: "Download Gravatars for users upon account creation or email change."
-    digest_topics: "The maximum number of topics to display in the email summary."
+    digest_topics: "The maximum number of popular topics to display in the email summary."
+    digest_posts: "The maximum number of popular posts to display in the email summary."
+    digest_other_topics: "The maximum number of topics to show in the 'New in topics and categories you follow' section of the email summary."
     digest_min_excerpt_length: "Minimum post excerpt in the email summary, in characters."
     delete_digest_email_after_days: "Suppress summary emails for users not seen on the site for more than (n) days."
     digest_suppress_categories: "Suppress these categories from summary emails."
@@ -2423,16 +2437,23 @@ en:
 
     digest:
       why: "A brief summary of %{site_link} since your last visit on %{last_seen_at}"
+      since_last_visit: "Since your last visit"
+      new_topics: "New Topics"
+      unread_messages: "Unread Messages"
+      unread_notifications: "Unread Notifications"
+      new_posts: "New Posts"
+      new_users: "New Users"
+      popular_topics: "Popular Topics"
+      follow_topic: "Follow this topic"
+      join_the_discussion: "Read More"
+      popular_posts: "Popular Posts"
+      from_topic_label: "From"
+      more_new: "New in topics and categories you follow"
       subject_template: "[%{site_name}] Summary"
-      new_activity: "New activity on your topics and posts:"
-      top_topics: "Popular posts"
-      other_new_topics: "Popular topics"
       unsubscribe: "This summary is sent from %{site_link} when we haven't seen you in a while. To unsubscribe %{unsubscribe_link}."
       click_here: "click here"
       from: "%{site_name} summary"
-      read_more: "Read More"
-      more_topics: "There were %{new_topics_since_seen} other new topics."
-      more_topics_category: "More new topics:"
+      preheader: "A brief summary since your last visit on %{last_seen_at}"
       custom:
         html:
           header: ''
@@ -3212,6 +3233,13 @@ en:
       title: "Resend Activation Email"
       message: "<p>We've re-sent the activation email to <b>%{email}</b>"
 
+  safe_mode:
+    title: "Enter safe mode"
+    description: "Safe mode allows you to test your site without loading plugins or site customizations."
+    no_customizations: "Disable all site customizations"
+    only_official: "Disable unofficial plugins"
+    no_plugins: "Disable all plugins"
+    enter: "Enter Safe Mode"
   wizard:
     title: "Discourse Setup"
     step:

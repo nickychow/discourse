@@ -38,11 +38,11 @@ export function setup(helper) {
 
   function imageFor(code) {
     code = code.toLowerCase();
-    const options = helper.getOptions();
-    const url = buildEmojiUrl(code, options);
+    const opts = helper.getOptions();
+    const url = buildEmojiUrl(code, opts);
     if (url) {
       const title = `:${code}:`;
-      const classes = isCustomEmoji(code) ? "emoji emoji-custom" : "emoji";
+      const classes = isCustomEmoji(code, opts) ? "emoji emoji-custom" : "emoji";
       return ['img', { href: url, title, 'class': classes, alt: title }];
     }
   }

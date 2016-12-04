@@ -42,7 +42,16 @@ createWidget('header-notifications', {
 
     const unreadPMs = currentUser.get('unread_private_messages');
     if (!!unreadPMs) {
-      if (!currentUser.get('read_first_notification')) contents.push(h('span.ring'));
+      if (!currentUser.get('read_first_notification')) {
+        contents.push(h('span.ring'));
+        if (!attrs.active && attrs.ringBackdrop) {
+          contents.push(h('span.ring-backdrop-spotlight'));
+          contents.push(h('span.ring-backdrop',
+            {},
+            h('h1.ring-first-notification', {} ,I18n.t('user.first_notification'))
+          ));
+        }
+      };
 
       contents.push(this.attach('link', { action: attrs.action,
                                           className: 'badge-notification unread-private-messages',
@@ -124,7 +133,8 @@ createWidget('header-icons', {
     const icons = [search, hamburger];
     if (this.currentUser) {
       icons.push(this.attach('user-dropdown', { active: attrs.userVisible,
-                                                action: 'toggleUserMenu' }));
+                                                action: 'toggleUserMenu',
+                                                ringBackdrop: attrs.ringBackdrop }));
     }
 
     return icons;
@@ -159,10 +169,19 @@ export default createWidget('header', {
   buildKey: () => `header`,
 
   defaultState() {
-    return { searchVisible: false,
-             hamburgerVisible: false,
-             userVisible: false,
-             contextEnabled: false };
+    let states =  {
+      searchVisible: false,
+      hamburgerVisible: false,
+      userVisible: false,
+      contextEnabled: false,
+      ringBackdrop: true
+    };
+
+    if (this.site.mobileView) {
+      states.skipSearchContext = true;
+    }
+
+    return states;
   },
 
   html(attrs, state) {
@@ -170,6 +189,7 @@ export default createWidget('header', {
                     this.attach('header-icons', { hamburgerVisible: state.hamburgerVisible,
                                                   userVisible: state.userVisible,
                                                   searchVisible: state.searchVisible,
+                                                  ringBackdrop: state.ringBackdrop,
                                                   flagCount: attrs.flagCount })];
 
     if (state.searchVisible) {
@@ -215,7 +235,7 @@ export default createWidget('header', {
       var params = "";
 
       if (context) {
-        params = `?context=${context.type}&context_id=${context.id}&skip_context=true`;
+        params = `?context=${context.type}&context_id=${context.id}&skip_context=${this.state.skipSearchContext}`;
       }
 
       return DiscourseURL.routeTo('/search' + params);
@@ -230,6 +250,7 @@ export default createWidget('header', {
   },
 
   toggleUserMenu() {
+    this.state.ringBackdrop = false;
     this.state.userVisible = !this.state.userVisible;
   },
 

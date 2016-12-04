@@ -1318,32 +1318,50 @@ describe User do
   end
 
   describe '#read_first_notification?' do
-    let(:user) { Fabricate(:user) }
-    let(:notification) { Fabricate(:private_message_notification, user: user) }
-    let(:other_notification) { Fabricate(:private_message_notification, user: user) }
+    let(:user) { Fabricate(:user, trust_level: TrustLevel[0]) }
+    let(:notification) { Fabricate(:private_message_notification) }
 
-    describe 'when first notification has not been read' do
+    describe 'when first notification has not been seen' do
       it 'should return the right value' do
-        notification.update_attributes!(read: false)
-        other_notification.update_attributes!(read: true)
-
         expect(user.read_first_notification?).to eq(false)
       end
     end
 
-    describe 'when first notification has been read' do
+    describe 'when first notification has been seen' do
       it 'should return the right value' do
-        notification.update_attributes!(read: true)
-        other_notification.update_attributes!(read: false)
+        user.update_attributes!(seen_notification_id: notification.id)
+        expect(user.reload.read_first_notification?).to eq(true)
+      end
+    end
+
+    describe 'when user is not trust level 0' do
+      it 'should return the right value' do
+        user.update_attributes!(trust_level: TrustLevel[1])
 
         expect(user.read_first_notification?).to eq(true)
       end
     end
 
-    describe 'when user does not have any notifications' do
+    describe 'when user is an old user' do
       it 'should return the right value' do
-        expect(user.read_first_notification?).to eq(false)
+        user.update_attributes!(created_at: 1.year.ago)
+
+        expect(user.read_first_notification?).to eq(true)
       end
+    end
+  end
+
+  describe "#featured_user_badges" do
+    let(:user) { Fabricate(:user) }
+    let!(:user_badge_tl1) { UserBadge.create(badge_id: 1, user: user, granted_by: Discourse.system_user, granted_at: Time.now) }
+    let!(:user_badge_tl2) { UserBadge.create(badge_id: 2, user: user, granted_by: Discourse.system_user, granted_at: Time.now) }
+
+    it 'should display highest trust level badge first' do
+      expect(user.featured_user_badges[0].badge_id).to eq(2)
+    end
+
+    it 'should display only 1 trust level badge' do
+      expect(user.featured_user_badges.length).to eq(1)
     end
   end
 end

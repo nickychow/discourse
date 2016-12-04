@@ -196,6 +196,17 @@ export default Ember.Controller.extend({
   }.property('model.creatingPrivateMessage', 'model.targetUsernames'),
 
   actions: {
+
+    typed() {
+      this.checkReplyLength();
+      this.get('model').typing();
+    },
+
+    cancelled() {
+      this.send('hitEsc');
+      this.send('hideOptions');
+    },
+
     addLinkLookup(linkLookup) {
       this.set('linkLookup', linkLookup);
     },
@@ -344,6 +355,22 @@ export default Ember.Controller.extend({
           });
         });
       }
+    },
+
+    cannotSeeMention(mentions) {
+      mentions.forEach(mention => {
+        const translation = (this.get('topic.isPrivateMessage')) ?
+          'composer.cannot_see_mention.private' :
+          'composer.cannot_see_mention.category';
+        const body = I18n.t(translation, {
+          username: "@" + mention.name
+        });
+        this.appEvents.trigger('composer-messages:create', {
+          extraClass: 'custom-body',
+          templateName: 'custom-body',
+          body
+        });
+      });
     }
 
   },

@@ -45,6 +45,7 @@ class ApplicationController < ActionController::Base
   before_filter :check_xhr
   after_filter  :add_readonly_header
   after_filter  :perform_refresh_session
+  after_filter  :dont_cache_page
 
   layout :set_layout
 
@@ -62,6 +63,12 @@ class ApplicationController < ActionController::Base
 
   def perform_refresh_session
     refresh_session(current_user)
+  end
+
+  def dont_cache_page
+    if !response.headers["Cache-Control"] && response.cache_control.blank?
+      response.headers["Cache-Control"] = "no-store, must-revalidate, no-cache, private"
+    end
   end
 
   def slow_platform?
@@ -458,7 +465,7 @@ class ApplicationController < ActionController::Base
     end
 
     def mini_profiler_enabled?
-      defined?(Rack::MiniProfiler) && guardian.is_developer?
+      defined?(Rack::MiniProfiler) && (guardian.is_developer? || Rails.env.development?)
     end
 
     def authorize_mini_profiler
